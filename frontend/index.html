@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ALDA — Autonomous Literature Discovery Agent</title>
+  <title>ALDA — Literature Search</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -13,29 +13,55 @@
 <header class="container-fluid alda-header">
   <nav>
     <ul>
-      <li><strong class="alda-logo">ALDA</strong> <span class="alda-sub">Autonomous Literature Discovery Agent</span></li>
+      <li><strong class="alda-logo">ALDA</strong> <span class="alda-sub">Autonomous Literature Search</span></li>
     </ul>
     <ul>
-      <li>
-        <span class="status-dot" id="dot-db" title="Database"></span> DB
-        <span class="status-dot" id="dot-llm" title="LLM"></span> LLM
-        <span class="status-dot" id="dot-scraping" title="Scraping"></span> Scraping
+      <li class="system-status">
+        <span class="status-indicator">
+          <span class="status-dot" id="dot-db" title="Connecting…"></span>
+          <span class="status-label" id="label-db">Database</span>
+        </span>
+        <span class="status-indicator">
+          <span class="status-dot" id="dot-llm" title="Checking…"></span>
+          <span class="status-label" id="label-llm">AI scoring</span>
+        </span>
+        <span class="status-indicator">
+          <span class="status-dot" id="dot-scraping" title="Checking…"></span>
+          <span class="status-label" id="label-scraping">Web scraping</span>
+        </span>
       </li>
       <li><a href="https://github.com/lipanook123/alda" target="_blank" rel="noopener">GitHub</a></li>
     </ul>
   </nav>
 </header>
 
+<!-- ====== GUIDED BANNER ====== -->
+<div class="container-fluid guided-banner-wrap">
+  <div class="container guided-banner">
+    <div id="guided-step-indicator">
+      <span class="step-pip active" id="pip-1">1</span>
+      <span class="step-line"></span>
+      <span class="step-pip" id="pip-2">2</span>
+      <span class="step-line"></span>
+      <span class="step-pip" id="pip-3">3</span>
+    </div>
+    <div id="guided-message">
+      <strong id="guided-title">Step 1 — Describe your research question</strong>
+      <p id="guided-desc">Type your research question below, then click <strong>Parse Brief</strong> to continue.</p>
+    </div>
+  </div>
+</div>
+
 <!-- ====== TAB NAV ====== -->
 <div class="container-fluid tab-nav">
   <div class="container">
     <nav class="tabs">
-      <button class="tab-btn active" data-tab="mission">1. Mission Brief</button>
+      <button class="tab-btn active" data-tab="mission">1. Your Question</button>
       <button class="tab-btn" data-tab="search">2. Search</button>
       <button class="tab-btn" data-tab="results">3. Results</button>
-      <button class="tab-btn" data-tab="upload">4. Upload</button>
-      <button class="tab-btn" data-tab="export">5. Export</button>
-      <button class="tab-btn" data-tab="themes">6. Themes</button>
+      <button class="tab-btn" data-tab="upload">Upload Sources</button>
+      <button class="tab-btn" data-tab="export">Export</button>
+      <button class="tab-btn" data-tab="themes">Themes</button>
     </nav>
   </div>
 </div>
@@ -45,28 +71,33 @@
   <!-- ====== TAB: MISSION ====== -->
   <section id="tab-mission" class="tab-panel active">
     <hgroup>
-      <h2>Research Mission Brief</h2>
-      <p>Describe your research question in plain language. ALDA will parse it into a structured search strategy.</p>
+      <h2>What are you researching?</h2>
+      <p>Describe your research question in plain language. ALDA will automatically identify
+         the key topics, relevant time periods, and what to include or exclude from your search.</p>
     </hgroup>
     <div class="grid">
       <div>
-        <label for="mission-text">Mission Brief</label>
+        <label for="mission-text">Your research question</label>
         <textarea id="mission-text" rows="8"
-          placeholder="Example: Conduct a systematic literature review on climate change adaptation strategies in Sub-Saharan Africa from 2015 to 2024. Focus on peer-reviewed studies and grey literature from international organisations. Exclude studies focused on mitigation only."></textarea>
+          placeholder="Example: Conduct a systematic literature review on climate change adaptation strategies in Sub-Saharan Africa from 2015 to 2024. Focus on peer-reviewed studies and reports from international organisations. Exclude studies focused only on mitigation."></textarea>
+        <p class="field-help">Tip: include the topic, the time period, the types of sources you want (e.g. journal articles, policy reports), and anything you want to leave out. A few sentences is enough.</p>
         <div class="btn-row">
           <button id="btn-parse" class="primary">Parse Brief</button>
           <span id="parse-status" class="status-msg"></span>
         </div>
       </div>
       <div id="brief-preview" class="brief-preview hidden">
-        <h4>Parsed Structure</h4>
+        <h4>What ALDA found in your question</h4>
         <div id="brief-content"></div>
+        <div style="margin-top:1rem">
+          <button id="btn-go-search" class="primary">Run Search →</button>
+        </div>
       </div>
     </div>
 
     <!-- Recent queries -->
-    <details id="recent-queries-section" class="hidden">
-      <summary>Recent Queries</summary>
+    <details id="recent-queries-section" class="hidden" style="margin-top:2rem">
+      <summary>Resume a previous search</summary>
       <div id="recent-queries-list"></div>
     </details>
   </section>
@@ -74,100 +105,141 @@
   <!-- ====== TAB: SEARCH ====== -->
   <section id="tab-search" class="tab-panel hidden">
     <hgroup>
-      <h2>Search Configuration</h2>
-      <p>Select data sources and launch the search. ALDA will iterate until saturation.</p>
+      <h2>Run Your Search</h2>
+      <p>ALDA will search multiple academic databases and return matching sources.
+         This usually takes 1–3 minutes. You don’t need to do anything while it runs.</p>
     </hgroup>
 
     <div id="no-query-warn" class="hidden">
-      <p><mark>Parse a mission brief first (Step 1).</mark></p>
+      <div class="empty-state">
+        <p>You haven’t described your research question yet.</p>
+        <button class="secondary" id="btn-go-mission">← Start at Step 1</button>
+      </div>
     </div>
 
     <div id="search-form">
-      <fieldset>
-        <legend>Academic Sources</legend>
-        <label><input type="checkbox" name="source" value="semantic_scholar" checked /> Semantic Scholar</label>
-        <label><input type="checkbox" name="source" value="crossref" checked /> CrossRef</label>
-        <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
-        <label><input type="checkbox" name="source" value="arxiv" checked /> arXiv</label>
-        <label><input type="checkbox" name="source" value="pubmed" checked /> PubMed</label>
-      </fieldset>
-      <fieldset>
-        <legend>Grey Literature</legend>
-        <label id="lbl-google"><input type="checkbox" name="source" value="google_cse" /> Google CSE <span class="badge-key">API key required</span></label>
-        <label id="lbl-bing"><input type="checkbox" name="source" value="bing" /> Bing Search <span class="badge-key">API key required</span></label>
-        <label><input type="checkbox" name="source" value="duckduckgo" checked /> DuckDuckGo</label>
-      </fieldset>
-      <fieldset>
-        <legend>Options</legend>
-        <label>
-          <input type="checkbox" id="use-llm" checked />
-          Score relevance with LLM (if configured)
-        </label>
-      </fieldset>
-      <div class="btn-row">
-        <button id="btn-search" class="primary">Start Search</button>
+      <div class="btn-row" style="margin-bottom:1.5rem">
+        <button id="btn-search" class="primary btn-large">Start Search</button>
         <span id="search-status-msg" class="status-msg"></span>
       </div>
 
-      <!-- Progress -->
+      <!-- Progress (shown during search) -->
       <div id="search-progress" class="hidden">
         <progress id="search-progress-bar" max="100" value="0"></progress>
         <div id="search-stats" class="search-stats"></div>
-        <div id="source-breakdown"></div>
+        <div id="source-breakdown" style="margin-top:0.5rem"></div>
       </div>
+
+      <!-- Advanced options — collapsed by default -->
+      <details id="search-advanced" style="margin-top:2rem">
+        <summary class="advanced-toggle">Advanced options</summary>
+        <div class="advanced-panel">
+          <fieldset>
+            <legend>Academic databases</legend>
+            <label><input type="checkbox" name="source" value="semantic_scholar" checked /> Semantic Scholar</label>
+            <label><input type="checkbox" name="source" value="crossref" checked /> CrossRef</label>
+            <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
+            <label><input type="checkbox" name="source" value="arxiv" checked /> arXiv</label>
+            <label><input type="checkbox" name="source" value="pubmed" checked /> PubMed</label>
+          </fieldset>
+          <fieldset>
+            <legend>Web sources</legend>
+            <label id="lbl-google">
+              <input type="checkbox" name="source" value="google_cse" />
+              Google CSE
+              <span class="badge-key">API key required —
+                <a href="https://github.com/lipanook123/alda#byok" target="_blank">setup guide</a>
+              </span>
+            </label>
+            <label id="lbl-bing">
+              <input type="checkbox" name="source" value="bing" />
+              Bing Search
+              <span class="badge-key">API key required —
+                <a href="https://github.com/lipanook123/alda#byok" target="_blank">setup guide</a>
+              </span>
+            </label>
+            <label><input type="checkbox" name="source" value="duckduckgo" checked /> DuckDuckGo (free)</label>
+          </fieldset>
+          <fieldset>
+            <legend>AI relevance scoring</legend>
+            <label>
+              <input type="checkbox" id="use-llm" checked />
+              Score each result for relevance using AI
+            </label>
+            <p class="field-help">Requires an AI API key configured on the server. If not set up, this option is safely ignored and all results are still returned.</p>
+          </fieldset>
+        </div>
+      </details>
     </div>
   </section>
 
   <!-- ====== TAB: RESULTS ====== -->
   <section id="tab-results" class="tab-panel hidden">
     <hgroup>
-      <h2>Results</h2>
+      <h2>Your Results</h2>
     </hgroup>
 
-    <!-- Filters -->
-    <div class="filters grid">
-      <label>
-        Source Type
-        <select id="filter-type">
-          <option value="all">All</option>
-          <option value="academic">Academic</option>
-          <option value="grey">Grey Literature</option>
-          <option value="upload">Uploaded</option>
-        </select>
-      </label>
-      <label>
-        Sort By
-        <select id="filter-sort">
-          <option value="relevance">Relevance</option>
-          <option value="year">Year (newest)</option>
-          <option value="citation_count">Citations</option>
-          <option value="title">Title (A-Z)</option>
-        </select>
-      </label>
-      <label>
-        Min Relevance
-        <input type="range" id="filter-relevance" min="0" max="100" value="0" step="5" />
-        <span id="relevance-val">0%</span>
-      </label>
-      <button id="btn-filter" class="secondary">Apply Filters</button>
+    <!-- Post-search next-step actions -->
+    <div id="results-actions" class="hidden results-actions">
+      <p id="results-action-msg"></p>
+      <div class="btn-row">
+        <button class="secondary" onclick="switchTab('export')">Download as spreadsheet →</button>
+        <button class="secondary" onclick="switchTab('themes')">Explore themes →</button>
+      </div>
     </div>
+
+    <!-- Filters -->
+    <details style="margin-bottom:1rem">
+      <summary class="advanced-toggle">Filter &amp; sort results</summary>
+      <div class="advanced-panel">
+        <div class="filters grid">
+          <label>
+            Source type
+            <select id="filter-type">
+              <option value="all">All sources</option>
+              <option value="academic">Academic papers only</option>
+              <option value="grey">Web sources only</option>
+              <option value="upload">Uploaded by me</option>
+            </select>
+          </label>
+          <label>
+            Sort by
+            <select id="filter-sort">
+              <option value="relevance">Relevance</option>
+              <option value="year">Year (newest first)</option>
+              <option value="citation_count">Most cited</option>
+              <option value="title">Title (A–Z)</option>
+            </select>
+          </label>
+          <label>
+            Minimum relevance
+            <input type="range" id="filter-relevance" min="0" max="100" value="0" step="5" />
+            <span id="relevance-val">0%</span>
+          </label>
+          <div style="align-self:end">
+            <button id="btn-filter" class="secondary">Apply</button>
+          </div>
+        </div>
+      </div>
+    </details>
 
     <p id="results-count" class="muted"></p>
     <div id="results-list"></div>
     <div class="btn-row" id="load-more-row" style="display:none">
-      <button id="btn-load-more" class="secondary">Load More</button>
+      <button id="btn-load-more" class="secondary">Load more results</button>
     </div>
   </section>
 
   <!-- ====== TAB: UPLOAD ====== -->
   <section id="tab-upload" class="tab-panel hidden">
     <hgroup>
-      <h2>Upload Your Data</h2>
-      <p>Add your own sources (CSV, JSON, or DuckDB). They will be merged and deduplicated with search results.</p>
+      <h2>Add Your Own Sources</h2>
+      <p>Already have a list of sources? Upload a CSV, JSON, or database file.
+         ALDA will merge them with your search results and remove any duplicates automatically.</p>
     </hgroup>
     <div class="drop-zone" id="drop-zone">
       <p>Drag &amp; drop your file here, or click to select</p>
-      <p><small>Supported: .csv, .json, .jsonl, .duckdb, .db</small></p>
+      <p><small>Accepted formats: CSV spreadsheet, JSON, or DuckDB database file</small></p>
       <input type="file" id="file-input" accept=".csv,.json,.jsonl,.duckdb,.db" hidden />
     </div>
     <div id="upload-file-name" class="muted"></div>
@@ -176,36 +248,55 @@
     </div>
     <div id="upload-result" class="hidden upload-result"></div>
 
-    <details>
-      <summary>CSV format guide</summary>
-      <p>Required: <code>url</code> or <code>doi</code>. Optional: <code>title</code>, <code>authors</code> (semicolon-separated), <code>year</code>, <code>abstract</code>, <code>venue</code>, <code>citation_count</code>, <code>source_type</code>, <code>relevance</code>.</p>
+    <details style="margin-top:1.5rem">
+      <summary class="advanced-toggle">How to prepare a CSV file</summary>
+      <div class="advanced-panel">
+        <p>Each row is one source. You need at least one of: a <strong>URL</strong> or a <strong>DOI</strong>
+           (a digital object identifier — looks like <code>10.1234/example</code>).</p>
+        <p><strong>Optional columns you can include:</strong></p>
+        <ul>
+          <li><strong>title</strong> — the title of the source</li>
+          <li><strong>authors</strong> — semicolon-separated, e.g. <code>Smith J; Jones A; Lee K</code></li>
+          <li><strong>year</strong> — publication year, e.g. <code>2022</code></li>
+          <li><strong>abstract</strong> — the abstract or summary text</li>
+          <li><strong>venue</strong> — journal name, conference, or publisher</li>
+        </ul>
+        <p><strong>Example (first two rows of your CSV):</strong></p>
+        <pre><code>url,title,authors,year
+https://example.org/paper1,My Paper Title,Smith J; Jones A,2022</code></pre>
+      </div>
     </details>
   </section>
 
   <!-- ====== TAB: EXPORT ====== -->
   <section id="tab-export" class="tab-panel hidden">
     <hgroup>
-      <h2>Export &amp; PRISMA Stats</h2>
+      <h2>Export Your Results</h2>
+      <p>Download your sources as a spreadsheet you can open in Excel or Google Sheets,
+         or as a structured JSON file for developers.
+         The PRISMA section generates a flow table required by many academic journals.</p>
     </hgroup>
     <div class="grid">
       <div>
         <fieldset>
-          <legend>Format</legend>
-          <label><input type="radio" name="export-format" value="csv" checked /> CSV</label>
-          <label><input type="radio" name="export-format" value="json" /> JSON</label>
+          <legend>File format</legend>
+          <label><input type="radio" name="export-format" value="csv" checked /> CSV — opens in Excel, Google Sheets, etc.</label>
+          <label><input type="radio" name="export-format" value="json" /> JSON — for developers and data tools</label>
         </fieldset>
         <label>
           <input type="checkbox" id="export-current-query" checked />
-          Current query only (uncheck to export all sources)
+          Export this search only
+          <p class="field-help" style="margin:0">(uncheck to export every source ever added to ALDA)</p>
         </label>
-        <div class="btn-row">
+        <div class="btn-row" style="margin-top:1rem">
           <button id="btn-export" class="primary">Download</button>
         </div>
       </div>
       <div>
         <h4>PRISMA Flow Statistics</h4>
-        <div id="prisma-stats">
-          <button id="btn-prisma" class="secondary">Load PRISMA Stats</button>
+        <p class="field-help">PRISMA (Preferred Reporting Items for Systematic Reviews and Meta-Analyses) is the international standard for documenting your search process. Most academic journals require a PRISMA flow diagram when you submit a systematic review.</p>
+        <div id="prisma-stats" style="margin-top:1rem">
+          <button id="btn-prisma" class="secondary">Generate PRISMA table</button>
         </div>
       </div>
     </div>
@@ -215,13 +306,15 @@
   <section id="tab-themes" class="tab-panel hidden">
     <hgroup>
       <h2>Thematic Clusters</h2>
-      <p>Automatically cluster sources into topics. Uses LLM if configured, otherwise keyword frequency.</p>
+      <p>ALDA groups your sources into themes automatically — useful for spotting the main topics
+         in your results. Larger tags mean more sources belong to that theme.
+         Click any tag to go to your results filtered by that theme.</p>
     </hgroup>
     <div class="btn-row">
-      <button id="btn-cluster" class="primary">Cluster Themes</button>
+      <button id="btn-cluster" class="primary">Find Themes</button>
       <span id="cluster-status" class="status-msg"></span>
     </div>
-    <div id="theme-cloud"></div>
+    <div id="theme-cloud" style="margin-top:1.5rem"></div>
   </section>
 
 </main>
@@ -229,7 +322,7 @@
 <footer class="container-fluid">
   <small>
     ALDA v0.1.0 — <a href="https://github.com/lipanook123/alda" target="_blank">Open source (AGPLv3)</a> —
-    <a href="https://github.com/lipanook123/alda#byok" target="_blank">BYOK setup guide</a>
+    <a href="https://github.com/lipanook123/alda#byok" target="_blank">API key setup guide</a>
   </small>
 </footer>
 
