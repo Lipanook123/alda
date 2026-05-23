@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "frontend/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -28,7 +29,11 @@ jobs:
 
       - name: Inject backend URL
         run: |
-          sed -i 's|%%BACKEND_URL%%|${{ secrets.BACKEND_URL }}|g' frontend/js/app.js
+          if [ -n "${{ secrets.BACKEND_URL }}" ]; then
+            sed -i 's|%%BACKEND_URL%%|${{ secrets.BACKEND_URL }}|g' frontend/js/app.js
+          else
+            sed -i 's|%%BACKEND_URL%%||g' frontend/js/app.js
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

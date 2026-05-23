@@ -449,7 +449,6 @@ async function runClustering() {
   showStatus("cluster-status", "Clustering…");
   try {
     const job = await api("POST", `/api/v1/themes/cluster/${state.queryId}`);
-    // Poll clustering job
     const interval = setInterval(async () => {
       try {
         const s = await api("GET", `/api/v1/themes/cluster/status/${job.job_id}`);
