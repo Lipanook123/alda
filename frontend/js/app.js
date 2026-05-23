@@ -1,10 +1,34 @@
 /**
  * ALDA Frontend — Vanilla ES Modules
- * BACKEND_URL is replaced by GitHub Actions at deploy time.
- * For local dev, set it here manually or via localStorage.
+ * BACKEND_URL is injected by GitHub Actions at deploy time.
+ * For local dev: localStorage.setItem("alda_backend_url", "http://localhost:8000")
  */
 
 const BACKEND_URL = localStorage.getItem("alda_backend_url") || "%%BACKEND_URL%%";
+
+// ──────────────────────────────────────────────
+// Display label maps
+// ──────────────────────────────────────────────
+const SOURCE_NAMES = {
+  semantic_scholar: "Semantic Scholar",
+  crossref: "CrossRef",
+  openalex: "OpenAlex",
+  arxiv: "arXiv",
+  pubmed: "PubMed",
+  google_cse: "Google CSE",
+  bing: "Bing Search",
+  duckduckgo: "DuckDuckGo",
+  upload: "Uploaded by you",
+  scraped: "Web scraping",
+};
+
+const JOB_STATUS_LABELS = {
+  running:   "Searching…",
+  complete:  "Search complete",
+  saturated: "Search complete — no further new sources found",
+  failed:    "Search failed",
+  pending:   "Starting…",
+};
 
 // ──────────────────────────────────────────────
 // State
@@ -14,7 +38,6 @@ let state = {
   jobId: null,
   pollInterval: null,
   resultsPage: 1,
-  totalResults: 0,
   pendingFile: null,
 };
 
@@ -27,7 +50,7 @@ async function api(method, path, body = null, isForm = false) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   } else if (body && isForm) {
-    opts.body = body; // FormData
+    opts.body = body;
   }
   const resp = await fetch(`${BACKEND_URL}${path}`, opts);
   if (!resp.ok) {
@@ -56,7 +79,39 @@ function initTabs() {
 }
 
 function switchTab(name) {
-  document.querySelector(`.tab-btn[data-tab="${name}"]`).click();
+  const btn = document.querySelector(`.tab-btn[data-tab="${name}"]`);
+  if (btn) btn.click();
+}
+
+// ──────────────────────────────────────────────
+// Guided banner
+// ──────────────────────────────────────────────
+const GUIDED_STEPS = {
+  1: {
+    title: "Step 1 — Describe your research question",
+    desc: "Type your research question below, then click <strong>Parse Brief</strong> to continue.",
+  },
+  2: {
+    title: "Step 2 — Run your search",
+    desc: "ALDA is ready to search. Click <strong>Start Search</strong> — it usually takes 1–3 minutes.",
+  },
+  3: {
+    title: "Step 3 — Explore and export your results",
+    desc: "Your results are ready. Browse them, download a spreadsheet, or explore themes.",
+  },
+};
+
+function updateGuidedBanner(step) {
+  const s = GUIDED_STEPS[step];
+  if (!s) return;
+  document.getElementById("guided-title").textContent = s.title;
+  document.getElementById("guided-desc").innerHTML = s.desc;
+
+  [1, 2, 3].forEach(n => {
+    const pip = document.getElementById(`pip-${n}`);
+    if (!pip) return;
+    pip.className = "step-pip" + (n < step ? " done" : n === step ? " active" : "");
+  });
 }
 
 // ──────────────────────────────────────────────
@@ -65,13 +120,16 @@ function switchTab(name) {
 async function checkHealth() {
   try {
     const h = await api("GET", "/api/v1/health");
-    setDot("dot-db", h.db === "connected" ? "green" : "red", `DB: ${h.db}`);
-    setDot("dot-llm", h.llm_configured ? "green" : "grey",
-           h.llm_configured ? "LLM: configured" : "LLM: not configured (BYOK)");
-    setDot("dot-scraping", h.scraping_enabled ? "green" : "grey",
-           h.scraping_enabled ? "Scraping: enabled" : "Scraping: disabled");
+    setDot("dot-db",
+      h.db === "connected" ? "green" : "red",
+      h.db === "connected" ? "Database connected" : `Database error: ${h.db}`);
+    setDot("dot-llm",
+      h.llm_configured ? "green" : "grey",
+      h.llm_configured ? "AI scoring active" : "AI scoring not configured (optional)");
+    setDot("dot-scraping",
+      h.scraping_enabled ? "green" : "grey",
+      h.scraping_enabled ? "Web scraping enabled" : "Web scraping disabled");
 
-    // Grey out unavailable sources
     if (h.available_sources) {
       const gCSE = h.available_sources.google_cse;
       const bing = h.available_sources.bing;
@@ -87,7 +145,7 @@ async function checkHealth() {
       }
     }
   } catch (e) {
-    setDot("dot-db", "red", `Cannot reach backend: ${e.message}`);
+    setDot("dot-db", "red", `Cannot reach the server: ${e.message}`);
     setDot("dot-llm", "red", "");
     setDot("dot-scraping", "red", "");
   }
@@ -98,6 +156,8 @@ function setDot(id, cls, title) {
   if (!el) return;
   el.className = `status-dot ${cls}`;
   if (title) el.title = title;
+  const labelEl = document.getElementById(id.replace("dot-", "label-"));
+  if (labelEl) labelEl.style.opacity = cls === "grey" ? "0.55" : "1";
 }
 
 // ──────────────────────────────────────────────
@@ -105,42 +165,52 @@ function setDot(id, cls, title) {
 // ──────────────────────────────────────────────
 function initMission() {
   document.getElementById("btn-parse").addEventListener("click", parseMission);
+  document.getElementById("btn-go-search").addEventListener("click", () => switchTab("search"));
+  const goMission = document.getElementById("btn-go-mission");
+  if (goMission) goMission.addEventListener("click", () => switchTab("mission"));
 }
 
 async function parseMission() {
   const text = document.getElementById("mission-text").value.trim();
-  if (!text) { showStatus("parse-status", "Please enter a mission brief.", "error"); return; }
+  if (!text) {
+    showStatus("parse-status", "Please enter your research question first.", "error");
+    return;
+  }
 
-  showStatus("parse-status", "Parsing…");
+  showStatus("parse-status", "Analysing your question…");
   try {
     const result = await api("POST", "/api/v1/mission/parse", { text });
     state.queryId = result.query_id;
     renderBrief(result.structured);
-    showStatus("parse-status", `Saved as query ${result.query_id.slice(0, 8)}…`, "success");
+    showStatus("parse-status", "Done! Review the summary, then run your search.", "success");
     loadRecentQueries();
+    updateGuidedBanner(2);
   } catch (e) {
-    showStatus("parse-status", e.message, "error");
+    showStatus("parse-status", `Something went wrong: ${e.message}`, "error");
   }
 }
 
 function renderBrief(s) {
   const kws = (s.keywords || []).map(k => `<span class="kw-chip">${esc(k)}</span>`).join(" ");
   const dr = s.date_range ? `${s.date_range[0]}–${s.date_range[1]}` : "Not specified";
-  const inc = s.inclusion_criteria.length
+  const inc = (s.inclusion_criteria || []).length
     ? `<ul>${s.inclusion_criteria.map(c => `<li>${esc(c)}</li>`).join("")}</ul>`
     : "<em>None specified</em>";
-  const exc = s.exclusion_criteria.length
+  const exc = (s.exclusion_criteria || []).length
     ? `<ul>${s.exclusion_criteria.map(c => `<li>${esc(c)}</li>`).join("")}</ul>`
     : "<em>None specified</em>";
+  const sourceDisplay = (s.source_types || [])
+    .map(t => SOURCE_NAMES[t] || t).join(", ") || "All sources";
 
   document.getElementById("brief-content").innerHTML = `
     <p><strong>Topic:</strong> ${esc(s.topic)}</p>
-    <p><strong>Keywords:</strong> ${kws || "<em>None</em>"}</p>
-    <p><strong>Date Range:</strong> ${dr}</p>
-    <p><strong>Sources:</strong> ${(s.source_types || []).join(", ")}</p>
-    <p><strong>Max Results:</strong> ${s.max_results}</p>
+    <p><strong>Search keywords:</strong> ${kws || "<em>None identified</em>"}</p>
+    <p><strong>Date range:</strong> ${dr}</p>
+    <p><strong>Source types:</strong> ${esc(sourceDisplay)}</p>
+    <p><strong>Maximum results:</strong> ${s.max_results}</p>
     <p><strong>Include:</strong></p>${inc}
     <p><strong>Exclude:</strong></p>${exc}
+    <p class="field-help">Not quite right? Edit your question above and click Parse Brief again.</p>
   `;
   document.getElementById("brief-preview").classList.remove("hidden");
 }
@@ -151,21 +221,23 @@ async function loadRecentQueries() {
     if (!queries.length) return;
     const list = queries.map(q => `
       <div class="result-card" style="cursor:pointer" data-qid="${q.id}">
-        <div class="result-meta">${q.id.slice(0, 8)}… — ${q.status} — ${fmtDate(q.timestamp)}</div>
-        <div>${esc(q.query_text.slice(0, 120))}…</div>
+        <div class="result-meta">${fmtDate(q.timestamp)} — ${JOB_STATUS_LABELS[q.status] || q.status}</div>
+        <div>${esc(q.query_text.slice(0, 140))}${q.query_text.length > 140 ? "…" : ""}</div>
       </div>
     `).join("");
     document.getElementById("recent-queries-list").innerHTML = list;
     document.getElementById("recent-queries-section").classList.remove("hidden");
     document.querySelectorAll("[data-qid]").forEach(el => {
-      el.addEventListener("click", () => selectQuery(el.dataset.qid));
+      el.addEventListener("click", () => selectQuery(el.dataset.qid, el));
     });
   } catch (_) {}
 }
 
-function selectQuery(qid) {
+function selectQuery(qid, el) {
   state.queryId = qid;
-  showStatus("parse-status", `Loaded query ${qid.slice(0, 8)}…`, "success");
+  const preview = el.querySelector("div:last-child")?.textContent || "";
+  showStatus("parse-status", "Previous search loaded. You can run a new search or go straight to Results.", "success");
+  updateGuidedBanner(2);
 }
 
 // ──────────────────────────────────────────────
@@ -184,11 +256,10 @@ async function startSearch() {
   document.getElementById("no-query-warn").classList.add("hidden");
   document.getElementById("search-form").classList.remove("hidden");
 
-  const sources = [...document.querySelectorAll('input[name="source"]:checked')]
-    .map(el => el.value);
+  const sources = [...document.querySelectorAll('input[name="source"]:checked')].map(el => el.value);
   const useLlm = document.getElementById("use-llm").checked;
 
-  showStatus("search-status-msg", "Starting search…");
+  showStatus("search-status-msg", "Starting…");
   try {
     const result = await api("POST", "/api/v1/search/start", {
       query_id: state.queryId,
@@ -197,10 +268,12 @@ async function startSearch() {
     });
     state.jobId = result.job_id;
     document.getElementById("search-progress").classList.remove("hidden");
+    document.getElementById("btn-search").disabled = true;
+    document.getElementById("btn-search").textContent = "Searching…";
     startPolling();
-    showStatus("search-status-msg", "Search running…");
+    showStatus("search-status-msg", "");
   } catch (e) {
-    showStatus("search-status-msg", e.message, "error");
+    showStatus("search-status-msg", `Could not start search: ${e.message}`, "error");
   }
 }
 
@@ -218,16 +291,21 @@ async function pollStatus() {
     if (["complete", "saturated", "failed"].includes(job.status)) {
       clearInterval(state.pollInterval);
       state.pollInterval = null;
-      const msg = job.status === "failed"
-        ? `Search failed: ${job.progress.error || "unknown error"}`
-        : `Search ${job.status} — ${job.progress.total_sources_found} sources found`;
-      showStatus("search-status-msg", msg, job.status === "failed" ? "error" : "success");
-      if (job.status !== "failed") {
-        setTimeout(() => { switchTab("results"); loadResults(true); }, 800);
+      document.getElementById("btn-search").disabled = false;
+      document.getElementById("btn-search").textContent = "Start Search";
+
+      if (job.status === "failed") {
+        showStatus("search-status-msg", "Search failed — please try again.", "error");
+      } else {
+        const total = job.progress.total_sources_found;
+        showStatus("search-status-msg",
+          `Found ${total} source${total !== 1 ? "s" : ""}. Taking you to results…`, "success");
+        updateGuidedBanner(3);
+        setTimeout(() => { switchTab("results"); loadResults(true); }, 1000);
       }
     }
   } catch (e) {
-    showStatus("search-status-msg", `Poll error: ${e.message}`, "error");
+    showStatus("search-status-msg", `Connection issue: ${e.message}`, "error");
   }
 }
 
@@ -238,13 +316,17 @@ function updateProgress(job) {
     95,
   );
   document.getElementById("search-progress-bar").value = pct;
+
+  const label = JOB_STATUS_LABELS[job.status] || job.status;
+  const newNote = p.new_this_iteration > 0
+    ? ` — ${p.new_this_iteration} new this pass`
+    : " — no new sources this pass (wrapping up…)";
   document.getElementById("search-stats").innerHTML =
-    `Iteration ${p.current_iteration} | Total: <strong>${p.total_sources_found}</strong> | ` +
-    `New this round: ${p.new_this_iteration} | Duplicates removed: ${p.duplicates_removed} | ` +
-    `Status: <strong>${job.status}</strong>`;
+    `<strong>${label}</strong> — Found <strong>${p.total_sources_found}</strong> sources so far${newNote}.`;
 
   const breakdown = Object.entries(p.source_breakdown || {})
-    .map(([k, v]) => `<span class="source-tag">${k}: ${v}</span>`)
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `<span class="source-tag">${SOURCE_NAMES[k] || k}: ${v}</span>`)
     .join(" ");
   document.getElementById("source-breakdown").innerHTML = breakdown;
 }
@@ -279,39 +361,61 @@ async function loadResults(reset = false) {
 
   try {
     const sources = await api("GET",
-      `/api/v1/search/results/${state.queryId}?page=${state.resultsPage}&page_size=50&sort_by=${sort}&source_type=${type}&min_relevance=${minRel}`
+      `/api/v1/search/results/${state.queryId}?page=${state.resultsPage}&page_size=50` +
+      `&sort_by=${sort}&source_type=${type}&min_relevance=${minRel}`
     );
 
     if (reset) document.getElementById("results-list").innerHTML = "";
 
     if (!sources.length && state.resultsPage === 1) {
-      document.getElementById("results-list").innerHTML = "<p><em>No results yet. Run a search first.</em></p>";
+      document.getElementById("results-list").innerHTML = `
+        <div class="empty-state">
+          <p>No results yet.</p>
+          <p>Go to <strong>Step 2: Search</strong> to run a search, or use <strong>Upload Sources</strong> to add your own.</p>
+          <button class="secondary" onclick="switchTab('search')" style="margin-top:0.75rem">Run a search →</button>
+        </div>`;
       document.getElementById("load-more-row").style.display = "none";
+      document.getElementById("results-actions").classList.add("hidden");
       return;
     }
 
     document.getElementById("results-count").textContent =
-      `Page ${state.resultsPage} — showing ${sources.length} sources`;
+      `Showing ${sources.length} source${sources.length !== 1 ? "s" : ""}` +
+      (state.resultsPage > 1 ? ` (page ${state.resultsPage})` : "");
 
     const cards = sources.map(renderSourceCard).join("");
     document.getElementById("results-list").insertAdjacentHTML("beforeend", cards);
-
     document.getElementById("load-more-row").style.display = sources.length >= 50 ? "flex" : "none";
 
-    // Abstract expand toggle
     document.querySelectorAll(".result-abstract").forEach(el => {
       el.addEventListener("click", () => el.classList.toggle("expanded"));
     });
+
+    if (state.resultsPage === 1 && sources.length > 0) {
+      const actionsEl = document.getElementById("results-actions");
+      const msgEl = document.getElementById("results-action-msg");
+      msgEl.innerHTML = `<strong>${sources.length}+ sources found.</strong> What would you like to do next?`;
+      actionsEl.classList.remove("hidden");
+    }
   } catch (e) {
-    document.getElementById("results-list").innerHTML = `<p class="error">${e.message}</p>`;
+    document.getElementById("results-list").innerHTML =
+      `<div class="empty-state"><p>Could not load results: ${esc(e.message)}</p></div>`;
   }
 }
 
 function renderSourceCard(src) {
-  const authors = (src.authors || []).slice(0, 3).join(", ") + (src.authors?.length > 3 ? " et al." : "");
+  const authors = (src.authors || []).slice(0, 3).join(", ") +
+    (src.authors?.length > 3 ? " et al." : "");
   const relBadge = src.relevance != null ? relevanceBadge(src.relevance) : "";
-  const typeBadge = `<span class="source-badge">${esc(src.source_type)}</span>`;
-  const doi = src.doi ? `<a href="https://doi.org/${esc(src.doi)}" target="_blank">DOI</a> · ` : "";
+  const srcName = SOURCE_NAMES[src.source_type] || src.source_type;
+  const typeBadge = `<span class="source-badge">${esc(srcName)}</span>`;
+  const doiLink = src.doi
+    ? `<a href="https://doi.org/${esc(src.doi)}" target="_blank" rel="noopener">Full text via DOI</a> · `
+    : "";
+  const citations = src.citation_count != null
+    ? ` · ${src.citation_count.toLocaleString()} citation${src.citation_count !== 1 ? "s" : ""}`
+    : "";
+
   return `
     <div class="result-card">
       <div class="result-title">
@@ -319,11 +423,9 @@ function renderSourceCard(src) {
         ${relBadge}${typeBadge}
       </div>
       <div class="result-meta">
-        ${authors ? esc(authors) + " · " : ""}
-        ${src.year || ""}
-        ${src.venue ? " · " + esc(src.venue) : ""}
-        ${src.citation_count != null ? ` · ${src.citation_count} citations` : ""}
-        · ${doi}<a href="${esc(src.url)}" target="_blank" rel="noopener">Link</a>
+        ${authors ? esc(authors) + " · " : ""}${src.year || ""}
+        ${src.venue ? " · " + esc(src.venue) : ""}${citations}
+        · ${doiLink}<a href="${esc(src.url)}" target="_blank" rel="noopener">Open source</a>
       </div>
       ${src.abstract ? `<div class="result-abstract">${esc(src.abstract)}</div>` : ""}
     </div>
@@ -333,7 +435,9 @@ function renderSourceCard(src) {
 function relevanceBadge(score) {
   const pct = Math.round(score * 100);
   const cls = score >= 0.7 ? "relevance-high" : score >= 0.4 ? "relevance-medium" : "relevance-low";
-  return `<span class="relevance-badge ${cls}">${pct}%</span>`;
+  const tip = `Relevance: ${pct}% — how closely this source matches your research question. `
+    + `70%+ is a strong match; 40–70% is moderate; below 40% may be less relevant.`;
+  return `<span class="relevance-badge ${cls}" title="${esc(tip)}">${pct}% match</span>`;
 }
 
 // ──────────────────────────────────────────────
@@ -357,7 +461,8 @@ function initUpload() {
 
 function setFile(file) {
   state.pendingFile = file;
-  document.getElementById("upload-file-name").textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+  document.getElementById("upload-file-name").textContent =
+    `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
   document.getElementById("btn-upload").disabled = false;
 }
 
@@ -367,17 +472,24 @@ async function doUpload() {
   fd.append("file", state.pendingFile);
   if (state.queryId) fd.append("query_id", state.queryId);
 
+  const btn = document.getElementById("btn-upload");
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+
   try {
     const result = await api("POST", "/api/v1/upload/", fd, true);
-    const hasErrors = result.errors?.length > 0;
     const el = document.getElementById("upload-result");
-    el.className = `upload-result ${hasErrors ? "has-errors" : "success"}`;
+    const n = result.records_inserted;
+    const dups = result.records_skipped_duplicate;
+    el.className = `upload-result ${result.errors?.length ? "has-errors" : "success"}`;
     el.innerHTML = `
-      <p><strong>Parsed:</strong> ${result.records_parsed} &nbsp;
-      <strong>Inserted:</strong> ${result.records_inserted} &nbsp;
-      <strong>Duplicates skipped:</strong> ${result.records_skipped_duplicate}</p>
-      ${result.errors.length ? `<details><summary>Errors (${result.errors.length})</summary>
-        <ul>${result.errors.map(e => `<li>${esc(e)}</li>`).join("")}</ul></details>` : ""}
+      <p><strong>${n} source${n !== 1 ? "s" : ""} added to your library.</strong>
+      ${dups > 0 ? `${dups} duplicate${dups !== 1 ? "s" : ""} skipped (already in the database).` : ""}</p>
+      ${result.errors?.length
+        ? `<details><summary>Problems with ${result.errors.length} row${result.errors.length !== 1 ? "s" : ""}</summary>
+           <ul>${result.errors.map(e => `<li>${esc(e)}</li>`).join("")}</ul></details>`
+        : ""}
+      ${n > 0 ? `<p><button class="secondary" onclick="switchTab('results');loadResults(true)">View your sources →</button></p>` : ""}
     `;
     el.classList.remove("hidden");
   } catch (e) {
@@ -385,6 +497,9 @@ async function doUpload() {
     el.className = "upload-result has-errors";
     el.innerHTML = `<p>Upload failed: ${esc(e.message)}</p>`;
     el.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Upload";
   }
 }
 
@@ -402,28 +517,43 @@ async function doExport() {
   const body = { format: fmt };
   if (currentOnly && state.queryId) body.query_id = state.queryId;
 
+  const btn = document.getElementById("btn-export");
+  btn.disabled = true;
+  btn.textContent = "Preparing download…";
+
   try {
     const blob = await api("POST", "/api/v1/export/", body);
     const ext = fmt === "csv" ? "csv" : "json";
     downloadBlob(blob, `alda_export_${Date.now()}.${ext}`);
   } catch (e) {
-    alert(`Export failed: ${e.message}`);
+    alert(`Download failed: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Download";
   }
 }
 
 async function loadPrisma() {
-  if (!state.queryId) { alert("No query selected."); return; }
+  if (!state.queryId) {
+    document.getElementById("prisma-stats").innerHTML =
+      `<p class="field-help">Please run a search first, then come back here to generate the PRISMA table.</p>`;
+    return;
+  }
+  const btn = document.getElementById("btn-prisma");
+  btn.disabled = true;
+  btn.textContent = "Loading…";
   try {
     const stats = await api("GET", `/api/v1/export/prisma/${state.queryId}`);
     const rows = [
-      ["Records identified", stats.identified],
+      ["Records identified through database searching", stats.identified],
       ["Duplicates removed", stats.duplicates_removed],
       ["Records screened", stats.screened],
       ["Records excluded", stats.excluded],
-      ["Records included", stats.included],
+      ["Studies included in review", stats.included],
     ];
     const bySource = Object.entries(stats.by_source || {})
-      .map(([k, v]) => `<tr><td>— ${esc(k)}</td><td>${v}</td></tr>`).join("");
+      .map(([k, v]) => `<tr><td>&nbsp;&nbsp;&nbsp;${esc(SOURCE_NAMES[k] || k)}</td><td>${v}</td></tr>`)
+      .join("");
     document.getElementById("prisma-stats").innerHTML = `
       <table class="prisma-table">
         <tbody>
@@ -431,9 +561,11 @@ async function loadPrisma() {
           ${bySource}
         </tbody>
       </table>
+      <p class="field-help" style="margin-top:0.75rem">Copy this table into your methods section. Most journals accept it in this format.</p>
     `;
   } catch (e) {
-    document.getElementById("prisma-stats").innerHTML = `<p class="error">${e.message}</p>`;
+    document.getElementById("prisma-stats").innerHTML =
+      `<p style="color:var(--alda-danger)">Could not load statistics: ${esc(e.message)}</p>`;
   }
 }
 
@@ -445,43 +577,77 @@ function initThemes() {
 }
 
 async function runClustering() {
-  if (!state.queryId) { alert("No query selected."); return; }
-  showStatus("cluster-status", "Clustering…");
+  if (!state.queryId) {
+    showStatus("cluster-status", "Please run a search first.", "error");
+    return;
+  }
+  const btn = document.getElementById("btn-cluster");
+  btn.disabled = true;
+  showStatus("cluster-status", "Grouping your sources into themes…");
   try {
     const job = await api("POST", `/api/v1/themes/cluster/${state.queryId}`);
-    // Poll clustering job
     const interval = setInterval(async () => {
       try {
         const s = await api("GET", `/api/v1/themes/cluster/status/${job.job_id}`);
         if (s.status === "complete") {
           clearInterval(interval);
-          showStatus("cluster-status", "Done!", "success");
+          btn.disabled = false;
+          showStatus("cluster-status", "Themes ready!", "success");
           loadThemes();
         } else if (s.status.startsWith("failed")) {
           clearInterval(interval);
-          showStatus("cluster-status", s.status, "error");
+          btn.disabled = false;
+          showStatus("cluster-status", "Clustering failed — please try again.", "error");
         }
-      } catch (_) { clearInterval(interval); }
+      } catch (_) {
+        clearInterval(interval);
+        btn.disabled = false;
+      }
     }, 2000);
   } catch (e) {
-    showStatus("cluster-status", e.message, "error");
+    btn.disabled = false;
+    showStatus("cluster-status", `Could not start clustering: ${e.message}`, "error");
   }
 }
 
 async function loadThemes() {
   if (!state.queryId) return;
+  const container = document.getElementById("theme-cloud");
   try {
     const themes = await api("GET", `/api/v1/themes/${state.queryId}`);
+    if (!themes.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <p>No themes found yet.</p>
+          <p>Run a search to gather sources, then click Find Themes.</p>
+        </div>`;
+      return;
+    }
     const maxCount = Math.max(...themes.map(t => t.source_count), 1);
     const cloud = themes.map(t => {
-      const size = 0.8 + (t.source_count / maxCount) * 1.4;
-      const title = t.description || `${t.source_count} sources`;
-      return `<span class="theme-tag" style="font-size:${size}rem" title="${esc(title)}">${esc(t.name)}</span>`;
+      const size = 0.85 + (t.source_count / maxCount) * 1.3;
+      const tip = `${t.source_count} source${t.source_count !== 1 ? "s" : ""}` +
+        (t.description ? ` — ${t.description}` : "");
+      return `<span class="theme-tag" style="font-size:${size}rem"
+        title="${esc(tip)}" data-theme="${esc(t.name)}"
+        >${esc(t.name)} <small style="opacity:0.7">(${t.source_count})</small></span>`;
     }).join("");
-    document.getElementById("theme-cloud").innerHTML =
+
+    container.innerHTML =
+      `<p class="field-help theme-legend">Tag size = number of sources in that theme. Click a tag to go to your results.</p>` +
       `<div class="theme-cloud">${cloud}</div>`;
+
+    container.querySelectorAll(".theme-tag").forEach(tag => {
+      tag.addEventListener("click", () => {
+        switchTab("results");
+        document.getElementById("results-count").textContent =
+          `Showing results for theme: ${tag.dataset.theme}`;
+        loadResults(true);
+      });
+    });
   } catch (e) {
-    document.getElementById("theme-cloud").innerHTML = `<p class="error">${e.message}</p>`;
+    container.innerHTML =
+      `<div class="empty-state"><p>Could not load themes: ${esc(e.message)}</p></div>`;
   }
 }
 
@@ -499,7 +665,8 @@ function esc(str) {
 
 function fmtDate(ts) {
   if (!ts) return "";
-  try { return new Date(ts).toLocaleDateString(); } catch (_) { return ts; }
+  try { return new Date(ts).toLocaleDateString(undefined, { dateStyle: "medium" }); }
+  catch (_) { return ts; }
 }
 
 function showStatus(id, msg, type = "") {

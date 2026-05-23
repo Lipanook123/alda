@@ -17,9 +17,13 @@
   padding: 0.5rem 1rem;
 }
 .alda-header a { color: var(--alda-light); }
-.alda-header nav ul li { color: #fff; }
 .alda-logo { font-size: 1.4rem; font-weight: 800; color: #fff; }
 .alda-sub { font-size: 0.8rem; opacity: 0.8; margin-left: 0.5rem; }
+
+/* ---- Header status indicators ---- */
+.system-status { display: flex; gap: 1.1rem; align-items: center; }
+.status-indicator { display: flex; align-items: center; gap: 5px; }
+.status-label { font-size: 0.78rem; color: rgba(255,255,255,0.85); white-space: nowrap; transition: opacity 0.3s; }
 
 /* ---- Status dots ---- */
 .status-dot {
@@ -28,13 +32,49 @@
   height: var(--dot-size);
   border-radius: 50%;
   background: #888;
-  margin-right: 2px;
-  vertical-align: middle;
+  flex-shrink: 0;
   transition: background 0.3s;
 }
-.status-dot.green { background: #40916c; }
+.status-dot.green { background: #52c47a; }
 .status-dot.red   { background: #e63946; }
 .status-dot.grey  { background: #aaa; }
+
+/* ---- Guided banner ---- */
+.guided-banner-wrap {
+  background: var(--alda-light);
+  border-bottom: 1px solid #b7e4c7;
+  padding: 0.75rem 0;
+}
+.guided-banner {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+#guided-step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.step-pip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #ccc;
+  color: #555;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  transition: background 0.25s, color 0.25s;
+}
+.step-pip.active { background: var(--alda-primary); color: #fff; }
+.step-pip.done   { background: var(--alda-accent); color: #fff; }
+.step-line { width: 32px; height: 2px; background: #aac9b5; flex-shrink: 0; }
+#guided-message strong { color: var(--alda-primary); }
+#guided-message p { margin: 0.2rem 0 0; font-size: 0.9rem; color: #444; }
 
 /* ---- Tab nav ---- */
 .tab-nav {
@@ -92,8 +132,8 @@
 
 /* ---- Search progress ---- */
 .search-stats {
-  font-size: 0.85rem;
-  color: #555;
+  font-size: 0.9rem;
+  color: #444;
   margin: 0.5rem 0;
 }
 .source-tag {
@@ -103,6 +143,26 @@
   padding: 2px 8px;
   margin: 2px;
   font-size: 0.8rem;
+}
+
+/* ---- Advanced options ---- */
+.advanced-toggle {
+  font-size: 0.9rem;
+  color: var(--alda-accent);
+  cursor: pointer;
+}
+.advanced-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+}
+
+/* ---- Large CTA button ---- */
+.btn-large {
+  font-size: 1.05rem;
+  padding: 0.65rem 2rem;
 }
 
 /* ---- Result cards ---- */
@@ -127,9 +187,29 @@
   overflow: hidden;
   cursor: pointer;
 }
-.result-abstract.expanded { -webkit-line-clamp: unset; }
+.result-abstract.expanded {
+  -webkit-line-clamp: unset;
+}
+.result-abstract::after {
+  content: "▾ Click to read full abstract";
+  display: block;
+  font-size: 0.75rem;
+  color: var(--alda-accent);
+  margin-top: 4px;
+  font-style: italic;
+}
+.result-abstract.expanded::after { content: ""; }
 
-/* Relevance badges */
+/* ---- Results next-step actions ---- */
+.results-actions {
+  background: var(--alda-light);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1.5rem;
+}
+.results-actions p { margin: 0 0 0.75rem; }
+
+/* ---- Relevance badges ---- */
 .relevance-badge {
   display: inline-block;
   border-radius: 4px;
@@ -137,6 +217,7 @@
   font-size: 0.75rem;
   font-weight: 600;
   margin-left: 6px;
+  cursor: help;
 }
 .relevance-high   { background: #d8f3dc; color: var(--alda-primary); }
 .relevance-medium { background: #fff3cd; color: #856404; }
@@ -156,6 +237,17 @@
 /* ---- Filters ---- */
 .filters { align-items: end; margin-bottom: 1rem; }
 .muted { color: #888; font-size: 0.85rem; }
+
+/* ---- Empty states ---- */
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: #888;
+  border: 2px dashed #dee2e6;
+  border-radius: 8px;
+}
+.empty-state p { margin-bottom: 0.5rem; }
+.empty-state button { margin-top: 0.75rem; }
 
 /* ---- Drop zone ---- */
 .drop-zone {
@@ -195,20 +287,24 @@
 .prisma-table td:last-child { text-align: right; font-weight: 600; }
 
 /* ---- Theme cloud ---- */
-.theme-cloud { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem 0; }
+.theme-cloud { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem 0; }
 .theme-tag {
   display: inline-block;
   background: var(--alda-light);
   color: var(--alda-primary);
   border-radius: 6px;
   padding: 4px 12px;
-  cursor: default;
-  transition: background 0.15s;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
 }
-.theme-tag:hover { background: var(--alda-muted); color: #fff; }
+.theme-tag:hover { background: var(--alda-muted); color: #fff; transform: scale(1.04); }
+.theme-legend { font-size: 0.8rem; color: #888; margin-bottom: 0.5rem; }
+
+/* ---- Field help text ---- */
+.field-help { font-size: 0.8rem; color: #888; margin-top: 0.3rem; }
 
 /* ---- Misc ---- */
-.btn-row { display: flex; align-items: center; gap: 1rem; margin-top: 0.75rem; }
+.btn-row { display: flex; align-items: center; gap: 1rem; margin-top: 0.75rem; flex-wrap: wrap; }
 .status-msg { font-size: 0.85rem; color: #555; }
 .status-msg.error { color: var(--alda-danger); }
 .status-msg.success { color: var(--alda-success); }
