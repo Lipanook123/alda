@@ -2,7 +2,6 @@ services:
   - type: web
     name: alda-backend
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
     envVars:
       - key: DATA_DIR
         value: /data
