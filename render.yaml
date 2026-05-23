@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: alda-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: SCRAPING_ENABLED
+        value: "false"
+      # LLM — BYOK: set these in the Render dashboard
+      - key: LLM_PROVIDER
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      # Search API keys (optional)
+      - key: SEMANTIC_SCHOLAR_API_KEY
+        sync: false
+      - key: GOOGLE_CSE_ID
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: BING_API_KEY
+        sync: false
+    disk:
+      name: alda-data
+      mountPath: /data
+      sizeGB: 10

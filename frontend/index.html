@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ALDA — Autonomous Literature Discovery Agent</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ====== HEADER ====== -->
+<header class="container-fluid alda-header">
+  <nav>
+    <ul>
+      <li><strong class="alda-logo">ALDA</strong> <span class="alda-sub">Autonomous Literature Discovery Agent</span></li>
+    </ul>
+    <ul>
+      <li>
+        <span class="status-dot" id="dot-db" title="Database"></span> DB
+        <span class="status-dot" id="dot-llm" title="LLM"></span> LLM
+        <span class="status-dot" id="dot-scraping" title="Scraping"></span> Scraping
+      </li>
+      <li><a href="https://github.com/lipanook123/alda" target="_blank" rel="noopener">GitHub</a></li>
+    </ul>
+  </nav>
+</header>
+
+<!-- ====== TAB NAV ====== -->
+<div class="container-fluid tab-nav">
+  <div class="container">
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="mission">1. Mission Brief</button>
+      <button class="tab-btn" data-tab="search">2. Search</button>
+      <button class="tab-btn" data-tab="results">3. Results</button>
+      <button class="tab-btn" data-tab="upload">4. Upload</button>
+      <button class="tab-btn" data-tab="export">5. Export</button>
+      <button class="tab-btn" data-tab="themes">6. Themes</button>
+    </nav>
+  </div>
+</div>
+
+<main class="container" id="main">
+
+  <!-- ====== TAB: MISSION ====== -->
+  <section id="tab-mission" class="tab-panel active">
+    <hgroup>
+      <h2>Research Mission Brief</h2>
+      <p>Describe your research question in plain language. ALDA will parse it into a structured search strategy.</p>
+    </hgroup>
+    <div class="grid">
+      <div>
+        <label for="mission-text">Mission Brief</label>
+        <textarea id="mission-text" rows="8"
+          placeholder="Example: Conduct a systematic literature review on climate change adaptation strategies in Sub-Saharan Africa from 2015 to 2024. Focus on peer-reviewed studies and grey literature from international organisations. Exclude studies focused on mitigation only."></textarea>
+        <div class="btn-row">
+          <button id="btn-parse" class="primary">Parse Brief</button>
+          <span id="parse-status" class="status-msg"></span>
+        </div>
+      </div>
+      <div id="brief-preview" class="brief-preview hidden">
+        <h4>Parsed Structure</h4>
+        <div id="brief-content"></div>
+      </div>
+    </div>
+
+    <!-- Recent queries -->
+    <details id="recent-queries-section" class="hidden">
+      <summary>Recent Queries</summary>
+      <div id="recent-queries-list"></div>
+    </details>
+  </section>
+
+  <!-- ====== TAB: SEARCH ====== -->
+  <section id="tab-search" class="tab-panel hidden">
+    <hgroup>
+      <h2>Search Configuration</h2>
+      <p>Select data sources and launch the search. ALDA will iterate until saturation.</p>
+    </hgroup>
+
+    <div id="no-query-warn" class="hidden">
+      <p><mark>Parse a mission brief first (Step 1).</mark></p>
+    </div>
+
+    <div id="search-form">
+      <fieldset>
+        <legend>Academic Sources</legend>
+        <label><input type="checkbox" name="source" value="semantic_scholar" checked /> Semantic Scholar</label>
+        <label><input type="checkbox" name="source" value="crossref" checked /> CrossRef</label>
+        <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
+        <label><input type="checkbox" name="source" value="arxiv" checked /> arXiv</label>
+        <label><input type="checkbox" name="source" value="pubmed" checked /> PubMed</label>
+      </fieldset>
+      <fieldset>
+        <legend>Grey Literature</legend>
+        <label id="lbl-google"><input type="checkbox" name="source" value="google_cse" /> Google CSE <span class="badge-key">API key required</span></label>
+        <label id="lbl-bing"><input type="checkbox" name="source" value="bing" /> Bing Search <span class="badge-key">API key required</span></label>
+        <label><input type="checkbox" name="source" value="duckduckgo" checked /> DuckDuckGo</label>
+      </fieldset>
+      <fieldset>
+        <legend>Options</legend>
+        <label>
+          <input type="checkbox" id="use-llm" checked />
+          Score relevance with LLM (if configured)
+        </label>
+      </fieldset>
+      <div class="btn-row">
+        <button id="btn-search" class="primary">Start Search</button>
+        <span id="search-status-msg" class="status-msg"></span>
+      </div>
+
+      <!-- Progress -->
+      <div id="search-progress" class="hidden">
+        <progress id="search-progress-bar" max="100" value="0"></progress>
+        <div id="search-stats" class="search-stats"></div>
+        <div id="source-breakdown"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== TAB: RESULTS ====== -->
+  <section id="tab-results" class="tab-panel hidden">
+    <hgroup>
+      <h2>Results</h2>
+    </hgroup>
+
+    <!-- Filters -->
+    <div class="filters grid">
+      <label>
+        Source Type
+        <select id="filter-type">
+          <option value="all">All</option>
+          <option value="academic">Academic</option>
+          <option value="grey">Grey Literature</option>
+          <option value="upload">Uploaded</option>
+        </select>
+      </label>
+      <label>
+        Sort By
+        <select id="filter-sort">
+          <option value="relevance">Relevance</option>
+          <option value="year">Year (newest)</option>
+          <option value="citation_count">Citations</option>
+          <option value="title">Title (A-Z)</option>
+        </select>
+      </label>
+      <label>
+        Min Relevance
+        <input type="range" id="filter-relevance" min="0" max="100" value="0" step="5" />
+        <span id="relevance-val">0%</span>
+      </label>
+      <button id="btn-filter" class="secondary">Apply Filters</button>
+    </div>
+
+    <p id="results-count" class="muted"></p>
+    <div id="results-list"></div>
+    <div class="btn-row" id="load-more-row" style="display:none">
+      <button id="btn-load-more" class="secondary">Load More</button>
+    </div>
+  </section>
+
+  <!-- ====== TAB: UPLOAD ====== -->
+  <section id="tab-upload" class="tab-panel hidden">
+    <hgroup>
+      <h2>Upload Your Data</h2>
+      <p>Add your own sources (CSV, JSON, or DuckDB). They will be merged and deduplicated with search results.</p>
+    </hgroup>
+    <div class="drop-zone" id="drop-zone">
+      <p>Drag &amp; drop your file here, or click to select</p>
+      <p><small>Supported: .csv, .json, .jsonl, .duckdb, .db</small></p>
+      <input type="file" id="file-input" accept=".csv,.json,.jsonl,.duckdb,.db" hidden />
+    </div>
+    <div id="upload-file-name" class="muted"></div>
+    <div class="btn-row">
+      <button id="btn-upload" class="primary" disabled>Upload</button>
+    </div>
+    <div id="upload-result" class="hidden upload-result"></div>
+
+    <details>
+      <summary>CSV format guide</summary>
+      <p>Required: <code>url</code> or <code>doi</code>. Optional: <code>title</code>, <code>authors</code> (semicolon-separated), <code>year</code>, <code>abstract</code>, <code>venue</code>, <code>citation_count</code>, <code>source_type</code>, <code>relevance</code>.</p>
+    </details>
+  </section>
+
+  <!-- ====== TAB: EXPORT ====== -->
+  <section id="tab-export" class="tab-panel hidden">
+    <hgroup>
+      <h2>Export &amp; PRISMA Stats</h2>
+    </hgroup>
+    <div class="grid">
+      <div>
+        <fieldset>
+          <legend>Format</legend>
+          <label><input type="radio" name="export-format" value="csv" checked /> CSV</label>
+          <label><input type="radio" name="export-format" value="json" /> JSON</label>
+        </fieldset>
+        <label>
+          <input type="checkbox" id="export-current-query" checked />
+          Current query only (uncheck to export all sources)
+        </label>
+        <div class="btn-row">
+          <button id="btn-export" class="primary">Download</button>
+        </div>
+      </div>
+      <div>
+        <h4>PRISMA Flow Statistics</h4>
+        <div id="prisma-stats">
+          <button id="btn-prisma" class="secondary">Load PRISMA Stats</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== TAB: THEMES ====== -->
+  <section id="tab-themes" class="tab-panel hidden">
+    <hgroup>
+      <h2>Thematic Clusters</h2>
+      <p>Automatically cluster sources into topics. Uses LLM if configured, otherwise keyword frequency.</p>
+    </hgroup>
+    <div class="btn-row">
+      <button id="btn-cluster" class="primary">Cluster Themes</button>
+      <span id="cluster-status" class="status-msg"></span>
+    </div>
+    <div id="theme-cloud"></div>
+  </section>
+
+</main>
+
+<footer class="container-fluid">
+  <small>
+    ALDA v0.1.0 — <a href="https://github.com/lipanook123/alda" target="_blank">Open source (AGPLv3)</a> —
+    <a href="https://github.com/lipanook123/alda#byok" target="_blank">BYOK setup guide</a>
+  </small>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
