@@ -1,10 +1,8 @@
 /**
  * ALDA Frontend — Vanilla ES Modules
- * BACKEND_URL is replaced by GitHub Actions at deploy time.
- * For local dev, set it here manually or via localStorage.
  */
 
-const BACKEND_URL = localStorage.getItem("alda_backend_url") || "%%BACKEND_URL%%";
+const BACKEND_URL = localStorage.getItem("alda_backend_url") || "https://alda-49ak.onrender.com";
 
 // ──────────────────────────────────────────────
 // State
@@ -71,7 +69,6 @@ async function checkHealth() {
     setDot("dot-scraping", h.scraping_enabled ? "green" : "grey",
            h.scraping_enabled ? "Scraping: enabled" : "Scraping: disabled");
 
-    // Grey out unavailable sources
     if (h.available_sources) {
       const gCSE = h.available_sources.google_cse;
       const bing = h.available_sources.bing;
@@ -298,7 +295,6 @@ async function loadResults(reset = false) {
 
     document.getElementById("load-more-row").style.display = sources.length >= 50 ? "flex" : "none";
 
-    // Abstract expand toggle
     document.querySelectorAll(".result-abstract").forEach(el => {
       el.addEventListener("click", () => el.classList.toggle("expanded"));
     });

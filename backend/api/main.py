@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from backend.config import settings
 from backend.db.database import close_db, init_db
@@ -37,6 +37,11 @@ app.include_router(search.router, prefix="/api/v1")
 app.include_router(upload.router, prefix="/api/v1")
 app.include_router(export.router, prefix="/api/v1")
 app.include_router(themes.router, prefix="/api/v1")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/api/v1/health", response_model=HealthStatus)
