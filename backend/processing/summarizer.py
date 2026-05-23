@@ -6,7 +6,7 @@ import logging
 import re
 
 from backend.api.models import SourceIn, StructuredBrief
-from backend.config import settings
+from backend import config as _config
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ Sources:
 
 def score_relevance(sources: list[SourceIn], brief: StructuredBrief) -> list[SourceIn]:
     """Score relevance for each source. Returns sources with relevance field updated."""
-    if not settings.llm_configured:
+    if not _config.is_llm_configured():
         return sources
 
     updated: list[SourceIn] = []
@@ -47,14 +47,14 @@ def _score_batch(batch: list[SourceIn], brief: StructuredBrief) -> list[SourceIn
     )
 
     response = litellm.completion(
-        model=f"{settings.llm_provider}/{settings.llm_model}",
+        model=f"{_config.get_llm_provider()}/{_config.get_llm_model()}",
         messages=[
             {
                 "role": "user",
                 "content": _RELEVANCE_PROMPT.format(topic=brief.topic, sources=src_texts),
             }
         ],
-        api_key=settings.llm_api_key,
+        api_key=_config.get_llm_api_key() or None,
         max_tokens=500,
     )
     content = response.choices[0].message.content
@@ -88,13 +88,13 @@ Summary:"""
 
 
 def generate_summary(src: SourceIn, brief: StructuredBrief) -> str | None:
-    if not settings.llm_configured:
+    if not _config.is_llm_configured():
         return None
     try:
         import litellm  # noqa: PLC0415
 
         response = litellm.completion(
-            model=f"{settings.llm_provider}/{settings.llm_model}",
+            model=f"{_config.get_llm_provider()}/{_config.get_llm_model()}",
             messages=[
                 {
                     "role": "user",
@@ -105,7 +105,7 @@ def generate_summary(src: SourceIn, brief: StructuredBrief) -> str | None:
                     ),
                 }
             ],
-            api_key=settings.llm_api_key,
+            api_key=_config.get_llm_api_key() or None,
             max_tokens=200,
         )
         return response.choices[0].message.content.strip()
