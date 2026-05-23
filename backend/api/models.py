@@ -81,6 +81,7 @@ class SearchJobRequest(BaseModel):
         "duckduckgo",
     ]
     use_llm_relevance: bool = True
+    max_token_budget: int | None = None  # stop LLM scoring when exceeded
 
 
 class SearchProgress(BaseModel):
@@ -90,6 +91,7 @@ class SearchProgress(BaseModel):
     duplicates_removed: int = 0
     saturation_reached: bool = False
     source_breakdown: dict[str, int] = {}
+    tokens_used: int = 0
     error: str | None = None
 
 
@@ -156,6 +158,8 @@ class HealthStatus(BaseModel):
     status: str = "ok"
     db: str = "connected"
     llm_configured: bool = False
+    llm_provider: str | None = None
+    llm_model: str | None = None
     scraping_enabled: bool = False
     available_sources: dict[str, bool] = {}
     version: str = "0.1.0"

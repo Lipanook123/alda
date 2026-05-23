@@ -53,6 +53,8 @@ async def health():
         status="ok",
         db="connected",
         llm_configured=_config.is_llm_configured(),
+        llm_provider=_config.get_llm_provider(),
+        llm_model=_config.get_llm_model(),
         scraping_enabled=settings.scraping_enabled,
         available_sources={
             "semantic_scholar": True,

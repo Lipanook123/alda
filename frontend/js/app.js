@@ -31,6 +31,25 @@ const JOB_STATUS_LABELS = {
 };
 
 // ──────────────────────────────────────────────
+// Token pricing (USD per 1k tokens — input/output)
+// ──────────────────────────────────────────────
+const TOKEN_PRICING = {
+  "openai/gpt-4o-mini":                  [0.00015,  0.0006],
+  "openai/gpt-4o":                       [0.005,    0.015],
+  "openai/gpt-3.5-turbo":               [0.0005,   0.0015],
+  "anthropic/claude-haiku-4-5-20251001": [0.00025,  0.00125],
+  "anthropic/claude-sonnet-4-6":         [0.003,    0.015],
+  "mistral/mistral-small-latest":        [0.001,    0.003],
+  "mistral/mistral-medium-latest":       [0.0027,   0.0081],
+  "mistral/open-mistral-7b":             [0.00025,  0.00025],
+  "gemini/gemini-1.5-flash":             [0.000075, 0.0003],
+  "gemini/gemini-1.5-pro":              [0.00125,  0.005],
+};
+// Rough per-source token estimates (title + abstract excerpt + prompt overhead)
+const TOKENS_IN_PER_SOURCE  = 150;  // input
+const TOKENS_OUT_PER_SOURCE =  25;  // output (short JSON score)
+
+// ──────────────────────────────────────────────
 // State
 // ──────────────────────────────────────────────
 let state = {
@@ -39,6 +58,9 @@ let state = {
   pollInterval: null,
   resultsPage: 1,
   pendingFile: null,
+  llmProvider: null,
+  llmModel: null,
+  maxResults: 200,
 };
 
 // ──────────────────────────────────────────────
@@ -145,11 +167,15 @@ async function checkHealth() {
       }
     }
 
+    state.llmProvider = h.llm_provider || null;
+    state.llmModel = h.llm_model || null;
+
     if (!h.llm_configured) {
       showSetupIfNeeded();
     } else {
       // Clear skip flag — user has LLM configured now
       localStorage.removeItem("alda_setup_skipped");
+      updateTokenEstimate();
     }
   } catch (e) {
     setDot("dot-db", "red", `Cannot reach the server: ${e.message}`);
@@ -188,10 +214,12 @@ async function parseMission() {
   try {
     const result = await api("POST", "/api/v1/mission/parse", { text });
     state.queryId = result.query_id;
+    state.maxResults = result.structured.max_results || 200;
     renderBrief(result.structured);
     showStatus("parse-status", "Done! Review the summary, then run your search.", "success");
     loadRecentQueries();
     updateGuidedBanner(2);
+    updateTokenEstimate();
   } catch (e) {
     showStatus("parse-status", `Something went wrong: ${e.message}`, "error");
   }
@@ -248,10 +276,62 @@ function selectQuery(qid, el) {
 }
 
 // ──────────────────────────────────────────────
+// Token estimate
+// ──────────────────────────────────────────────
+function updateTokenEstimate() {
+  const el = document.getElementById("token-estimate");
+  const textEl = document.getElementById("token-estimate-text");
+  if (!el || !textEl) return;
+
+  const useLlm = document.getElementById("use-llm");
+  if (!state.llmProvider || !state.llmModel || (useLlm && !useLlm.checked)) {
+    el.classList.add("hidden");
+    return;
+  }
+
+  const n = state.maxResults;
+  const totalIn  = n * TOKENS_IN_PER_SOURCE;
+  const totalOut = n * TOKENS_OUT_PER_SOURCE;
+  const totalTokens = totalIn + totalOut;
+
+  const key = `${state.llmProvider}/${state.llmModel}`;
+  const pricing = TOKEN_PRICING[key];
+
+  if (pricing) {
+    const cost = (totalIn / 1000 * pricing[0]) + (totalOut / 1000 * pricing[1]);
+    const costStr = cost < 0.01 ? "<$0.01" : `~$${cost.toFixed(2)}`;
+    textEl.innerHTML =
+      `<strong>Estimated AI scoring cost:</strong> ${costStr} ` +
+      `<span class="muted">(~${(totalTokens / 1000).toFixed(0)}k tokens for up to ${n} sources ` +
+      `using ${esc(state.llmModel)})</span>`;
+  } else {
+    textEl.innerHTML =
+      `<strong>AI scoring:</strong> ~${(totalTokens / 1000).toFixed(0)}k tokens estimated ` +
+      `for up to ${n} sources <span class="muted">(pricing not available for ${esc(state.llmModel)})</span>`;
+  }
+  el.classList.remove("hidden");
+}
+
+function budgetToTokens(dollars) {
+  if (!dollars || isNaN(dollars) || dollars <= 0) return null;
+  const key = `${state.llmProvider}/${state.llmModel}`;
+  const pricing = TOKEN_PRICING[key];
+  if (!pricing) {
+    // Fallback: assume $1 = ~5000 tokens (cheap model average)
+    return Math.round(dollars * 5000);
+  }
+  // Use average of input+output rate to convert dollar budget → token budget
+  const avgPricePer1k = (pricing[0] + pricing[1]) / 2;
+  return Math.round((dollars / avgPricePer1k) * 1000);
+}
+
+// ──────────────────────────────────────────────
 // Search
 // ──────────────────────────────────────────────
 function initSearch() {
   document.getElementById("btn-search").addEventListener("click", startSearch);
+  const useLlm = document.getElementById("use-llm");
+  if (useLlm) useLlm.addEventListener("change", updateTokenEstimate);
 }
 
 async function startSearch() {
@@ -265,6 +345,8 @@ async function startSearch() {
 
   const sources = [...document.querySelectorAll('input[name="source"]:checked')].map(el => el.value);
   const useLlm = document.getElementById("use-llm").checked;
+  const budgetDollars = parseFloat(document.getElementById("token-budget-dollars")?.value) || 0;
+  const maxTokenBudget = budgetDollars > 0 ? budgetToTokens(budgetDollars) : null;
 
   showStatus("search-status-msg", "Starting…");
   try {
@@ -272,6 +354,7 @@ async function startSearch() {
       query_id: state.queryId,
       sources,
       use_llm_relevance: useLlm,
+      max_token_budget: maxTokenBudget,
     });
     state.jobId = result.job_id;
     document.getElementById("search-progress").classList.remove("hidden");
@@ -335,7 +418,21 @@ function updateProgress(job) {
     .filter(([, v]) => v > 0)
     .map(([k, v]) => `<span class="source-tag">${SOURCE_NAMES[k] || k}: ${v}</span>`)
     .join(" ");
-  document.getElementById("source-breakdown").innerHTML = breakdown;
+
+  let tokenNote = "";
+  if (p.tokens_used > 0) {
+    const key = `${state.llmProvider}/${state.llmModel}`;
+    const pricing = TOKEN_PRICING[key];
+    if (pricing) {
+      const cost = (p.tokens_used / 1000) * ((pricing[0] + pricing[1]) / 2);
+      tokenNote = ` · AI scoring: ${p.tokens_used.toLocaleString()} tokens (~$${cost < 0.01 ? "<0.01" : cost.toFixed(2)})`;
+    } else {
+      tokenNote = ` · AI scoring: ${p.tokens_used.toLocaleString()} tokens used`;
+    }
+  }
+
+  document.getElementById("source-breakdown").innerHTML =
+    breakdown + (tokenNote ? `<div class="muted" style="margin-top:0.3rem;font-size:0.8rem">${tokenNote}</div>` : "");
 }
 
 // ──────────────────────────────────────────────
@@ -866,7 +963,7 @@ function setupSkip() {
 
 function closeSetup() {
   document.getElementById("setup-modal").classList.add("hidden");
-  checkHealth(); // refresh dots to reflect new LLM state
+  checkHealth(); // refresh dots and token estimate to reflect new LLM state
 }
 
 // ──────────────────────────────────────────────

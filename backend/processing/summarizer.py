@@ -22,23 +22,29 @@ Sources:
 {sources}"""
 
 
-def score_relevance(sources: list[SourceIn], brief: StructuredBrief) -> list[SourceIn]:
-    """Score relevance for each source. Returns sources with relevance field updated."""
+def score_relevance(
+    sources: list[SourceIn], brief: StructuredBrief
+) -> tuple[list[SourceIn], int]:
+    """Score relevance for each source. Returns (updated_sources, total_tokens_used)."""
     if not _config.is_llm_configured():
-        return sources
+        return sources, 0
 
     updated: list[SourceIn] = []
+    total_tokens = 0
     for i in range(0, len(sources), _BATCH_SIZE):
         batch = sources[i : i + _BATCH_SIZE]
         try:
-            batch = _score_batch(batch, brief)
+            batch, batch_tokens = _score_batch(batch, brief)
+            total_tokens += batch_tokens
         except Exception as e:
             log.warning("Relevance scoring failed for batch: %s", e)
         updated.extend(batch)
-    return updated
+    return updated, total_tokens
 
 
-def _score_batch(batch: list[SourceIn], brief: StructuredBrief) -> list[SourceIn]:
+def _score_batch(
+    batch: list[SourceIn], brief: StructuredBrief
+) -> tuple[list[SourceIn], int]:
     import litellm  # noqa: PLC0415
 
     src_texts = "\n\n".join(
@@ -57,10 +63,14 @@ def _score_batch(batch: list[SourceIn], brief: StructuredBrief) -> list[SourceIn
         api_key=_config.get_llm_api_key() or None,
         max_tokens=500,
     )
+    tokens_used = 0
+    if hasattr(response, "usage") and response.usage:
+        tokens_used = getattr(response.usage, "total_tokens", 0) or 0
+
     content = response.choices[0].message.content
     match = re.search(r"\[.*\]", content, re.DOTALL)
     if not match:
-        return batch
+        return batch, tokens_used
 
     scores: list[dict] = json.loads(match.group())
     id_to_score = {str(item["id"]): float(item["score"]) for item in scores if "id" in item and "score" in item}
@@ -72,7 +82,7 @@ def _score_batch(batch: list[SourceIn], brief: StructuredBrief) -> list[SourceIn
         if score is not None:
             src = src.model_copy(update={"relevance": max(0.0, min(1.0, score))})
         result.append(src)
-    return result
+    return result, tokens_used
 
 
 _SUMMARY_PROMPT = """\
