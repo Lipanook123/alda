@@ -1,5 +1,6 @@
 /**
  * ALDA Frontend — Vanilla ES Modules
+ * BACKEND_URL is injected by GitHub Actions at deploy time.
  * For local dev: localStorage.setItem("alda_backend_url", "http://localhost:8000")
  */
 
@@ -142,6 +143,13 @@ async function checkHealth() {
         bLabel.querySelector("input").disabled = !bing;
         if (!bing) bLabel.style.opacity = "0.5";
       }
+    }
+
+    if (!h.llm_configured) {
+      showSetupIfNeeded();
+    } else {
+      // Clear skip flag — user has LLM configured now
+      localStorage.removeItem("alda_setup_skipped");
     }
   } catch (e) {
     setDot("dot-db", "red", `Cannot reach the server: ${e.message}`);
@@ -650,6 +658,181 @@ async function loadThemes() {
 }
 
 // ──────────────────────────────────────────────
+// Setup Wizard
+// ──────────────────────────────────────────────
+const PROVIDERS_CONFIG = {
+  openai: {
+    name: "OpenAI",
+    description: "Most popular. GPT-4o-mini is fast, affordable, and capable.",
+    keyUrl: "https://platform.openai.com/api-keys",
+    keyHint: "Starts with sk-",
+    models: ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
+    steps: [
+      'Sign up or log in at <a href="https://platform.openai.com" target="_blank" rel="noopener">platform.openai.com</a>',
+      "Click <strong>API Keys</strong> in the left sidebar",
+      "Click <strong>Create new secret key</strong>",
+      "Copy the key — it starts with <code>sk-</code>",
+    ],
+  },
+  anthropic: {
+    name: "Anthropic (Claude)",
+    description: "Claude models. Haiku is fast and affordable.",
+    keyUrl: "https://console.anthropic.com/settings/keys",
+    keyHint: "Starts with sk-ant-",
+    models: ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"],
+    steps: [
+      'Sign up or log in at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>',
+      "Click <strong>API Keys</strong> in the left sidebar",
+      "Click <strong>Create Key</strong>",
+      "Copy the key — it starts with <code>sk-ant-</code>",
+    ],
+  },
+  mistral: {
+    name: "Mistral AI",
+    description: "European AI. Good balance of cost and capability.",
+    keyUrl: "https://console.mistral.ai/api-keys/",
+    keyHint: "A long alphanumeric string",
+    models: ["mistral-small-latest", "mistral-medium-latest", "open-mistral-7b"],
+    steps: [
+      'Sign up or log in at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a>',
+      "Click <strong>API Keys</strong> in the sidebar",
+      "Click <strong>Create new key</strong>",
+      "Copy the key",
+    ],
+  },
+  gemini: {
+    name: "Google Gemini",
+    description: "Google's AI. Has a free tier.",
+    keyUrl: "https://aistudio.google.com/app/apikey",
+    keyHint: "Starts with AIza",
+    models: ["gemini-1.5-flash", "gemini-1.5-pro"],
+    steps: [
+      'Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a>',
+      "Sign in with your Google account",
+      "Click <strong>Get API Key</strong>",
+      "Copy the key — it starts with <code>AIza</code>",
+    ],
+  },
+  ollama: {
+    name: "Ollama (free, local)",
+    description: "Runs on your own computer. No API key or account needed.",
+    keyUrl: "https://ollama.ai",
+    keyHint: null,
+    models: ["llama3", "llama3.1", "mistral", "gemma2"],
+    steps: [
+      'Download and install from <a href="https://ollama.ai" target="_blank" rel="noopener">ollama.ai</a>',
+      "Open a terminal and run: <code>ollama pull llama3</code>",
+      "Make sure Ollama is running, then come back here",
+    ],
+  },
+};
+
+let _setupProvider = null;
+
+function initSetupWizard() {
+  // Populate provider cards
+  const grid = document.getElementById("provider-grid");
+  if (grid) {
+    grid.innerHTML = Object.entries(PROVIDERS_CONFIG).map(([key, p]) => `
+      <div class="provider-card" onclick="selectProvider('${key}')">
+        <strong>${esc(p.name)}</strong>
+        <p>${esc(p.description)}</p>
+      </div>
+    `).join("");
+  }
+
+  document.getElementById("btn-setup-test").addEventListener("click", setupTestAndSave);
+}
+
+function showSetupIfNeeded() {
+  if (!localStorage.getItem("alda_setup_done") && !localStorage.getItem("alda_setup_skipped")) {
+    document.getElementById("setup-modal").classList.remove("hidden");
+  }
+}
+
+function setupGoTo(step) {
+  document.querySelectorAll(".setup-step").forEach(s => s.classList.add("hidden"));
+  document.getElementById(`setup-step-${step}`).classList.remove("hidden");
+}
+
+function selectProvider(key) {
+  _setupProvider = key;
+  const p = PROVIDERS_CONFIG[key];
+
+  // Build instructions
+  const stepsHtml = p.steps.map((s, i) => `<li>${s}</li>`).join("");
+  document.getElementById("provider-instructions").innerHTML = `
+    <h4>${esc(p.name)}</h4>
+    <ol style="padding-left:1.5rem;line-height:1.9">${stepsHtml}</ol>
+    <a href="${esc(p.keyUrl)}" target="_blank" rel="noopener" class="secondary"
+       style="display:inline-block;margin-top:0.75rem;font-size:0.9rem">
+      Open ${esc(p.name)} dashboard ↗
+    </a>
+  `;
+
+  // Populate model select
+  const sel = document.getElementById("setup-model");
+  sel.innerHTML = p.models.map(m => `<option value="${m}">${m}</option>`).join("");
+
+  // Handle Ollama (no key needed)
+  const keyInput = document.getElementById("setup-api-key");
+  const keyHint = document.getElementById("setup-key-hint");
+  if (p.keyHint === null) {
+    keyInput.value = "";
+    keyInput.placeholder = "No API key needed";
+    keyInput.disabled = true;
+    if (keyHint) keyHint.textContent = "Ollama runs locally — no account or key required.";
+  } else {
+    keyInput.disabled = false;
+    keyInput.placeholder = "Paste your key here";
+    if (keyHint) keyHint.textContent = p.keyHint;
+  }
+
+  setupGoTo(2);
+}
+
+async function setupTestAndSave() {
+  const btn = document.getElementById("btn-setup-test");
+  const statusEl = document.getElementById("setup-test-status");
+  const key = document.getElementById("setup-api-key").value.trim();
+  const model = document.getElementById("setup-model").value;
+
+  btn.disabled = true;
+  btn.textContent = "Testing connection…";
+  statusEl.innerHTML = "";
+
+  try {
+    const result = await api("POST", "/api/v1/setup/llm", {
+      provider: _setupProvider,
+      api_key: key,
+      model,
+    });
+    if (result.success) {
+      localStorage.setItem("alda_setup_done", "true");
+      localStorage.removeItem("alda_setup_skipped");
+      setupGoTo(4);
+    } else {
+      statusEl.innerHTML = `<p style="color:var(--alda-danger)">⚠️ ${esc(result.message)}</p>`;
+    }
+  } catch (e) {
+    statusEl.innerHTML = `<p style="color:var(--alda-danger)">⚠️ ${esc(e.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Test & save →";
+  }
+}
+
+function setupSkip() {
+  localStorage.setItem("alda_setup_skipped", "true");
+  closeSetup();
+}
+
+function closeSetup() {
+  document.getElementById("setup-modal").classList.add("hidden");
+  checkHealth(); // refresh dots to reflect new LLM state
+}
+
+// ──────────────────────────────────────────────
 // Utilities
 // ──────────────────────────────────────────────
 function esc(str) {
@@ -690,6 +873,7 @@ function downloadBlob(blob, filename) {
 // ──────────────────────────────────────────────
 function init() {
   initTabs();
+  initSetupWizard();
   initMission();
   initSearch();
   initResults();
