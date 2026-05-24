@@ -330,9 +330,17 @@ function renderBrief(s) {
   const sourceDisplay = (s.source_types || [])
     .map(t => SOURCE_NAMES[t] || t).join(", ") || "All sources";
 
+  const queriesHtml = (s.search_queries || []).length
+    ? `<p><strong>Search queries that will run:</strong></p>
+       <ol class="search-queries-list">${
+         s.search_queries.map(q => `<li><code>${esc(q)}</code></li>`).join("")
+       }</ol>`
+    : "";
+
   document.getElementById("brief-content").innerHTML = `
     <p><strong>Topic:</strong> ${esc(s.topic)}</p>
-    <p><strong>Search keywords:</strong> ${kws || "<em>None identified</em>"}</p>
+    <p><strong>Keywords extracted:</strong> ${kws || "<em>None identified</em>"}</p>
+    ${queriesHtml}
     <p><strong>Date range:</strong> ${dr}</p>
     <p><strong>Source types:</strong> ${esc(sourceDisplay)}</p>
     <p><strong>Maximum results:</strong> ${s.max_results}</p>

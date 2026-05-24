@@ -2,6 +2,7 @@ import re
 from collections import Counter
 
 from backend.api.models import StructuredBrief
+from backend import config as _config
 from backend.config import settings
 
 _STOPWORDS = {
@@ -33,7 +34,7 @@ Return ONLY a JSON array of strings (the new search terms), no explanation."""
 
 def expand_query(brief: StructuredBrief, abstracts: list[str]) -> list[str]:
     """Return additional search terms for the next iteration."""
-    if settings.llm_configured and abstracts:
+    if _config.is_llm_configured() and abstracts:
         try:
             return _expand_with_llm(brief, abstracts)
         except Exception:
@@ -47,7 +48,7 @@ def _expand_with_llm(brief: StructuredBrief, abstracts: list[str]) -> list[str]:
 
     sample = "\n---\n".join(abstracts[:10])[:3000]
     response = litellm.completion(
-        model=f"{settings.llm_provider}/{settings.llm_model}",
+        model=f"{_config.get_llm_provider()}/{_config.get_llm_model()}",
         messages=[
             {
                 "role": "user",
@@ -58,7 +59,7 @@ def _expand_with_llm(brief: StructuredBrief, abstracts: list[str]) -> list[str]:
                 ),
             }
         ],
-        api_key=settings.llm_api_key,
+        api_key=_config.get_llm_api_key() or None,
         max_tokens=300,
     )
     content = response.choices[0].message.content

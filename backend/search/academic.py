@@ -21,11 +21,33 @@ _UA = "ALDA/0.1 (https://github.com/lipanook123/alda; mailto:lipanook@gmail.com)
 _TIMEOUT = httpx.Timeout(30.0)
 
 
+_QUERY_META_WORDS = frozenset({
+    "systematic", "comprehensive", "thorough", "complete",
+    "search", "review", "analysis", "survey", "overview",
+    "perform", "conduct", "execute", "find", "identify",
+    "investigate", "examine", "assess", "evaluate", "determine",
+    "literature", "study", "studies", "paper", "papers",
+    "article", "articles", "source", "sources",
+})
+
+
 def _build_query(brief: StructuredBrief, extra_terms: list[str] | None = None) -> str:
-    terms = list(brief.keywords)
+    """Return the primary search query string for this brief."""
+    # Use LLM-generated Boolean query if available
+    if brief.search_queries:
+        base = brief.search_queries[0]
+        if extra_terms:
+            ext = " OR ".join(extra_terms[:4])
+            return f"({base}) AND ({ext})"
+        return base
+    # Heuristic fallback: filter meta-words, AND-join remaining terms for precision
+    filtered = [t for t in brief.keywords if t.lower() not in _QUERY_META_WORDS]
     if extra_terms:
-        terms.extend(extra_terms)
-    return " ".join(terms[:8])
+        filtered.extend(extra_terms[:3])
+    core = filtered[:5]
+    if not core:
+        return " ".join(brief.keywords[:6])
+    return " AND ".join(core) if len(core) > 1 else core[0]
 
 
 async def search(
@@ -36,12 +58,21 @@ async def search(
     query = _build_query(brief, extra_terms)
     tasks: dict[str, asyncio.Task] = {}
 
+    # Alternative queries (search_queries[1:]) run against the highest-quality
+    # sources only — avoids rate-limit storms while improving coverage.
+    # Only used on iteration 1 (no extra_terms) to avoid query explosion.
+    alt_queries = brief.search_queries[1:3] if (brief.search_queries and not extra_terms) else []
+
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": _UA}) as client:
         # ── Original five academic sources ──────────────────────────────────
         if "semantic_scholar" in enabled_sources:
             tasks["semantic_scholar"] = asyncio.create_task(
                 _search_semantic_scholar(client, query, brief)
             )
+            for i, aq in enumerate(alt_queries, 1):
+                tasks[f"semantic_scholar_q{i+1}"] = asyncio.create_task(
+                    _search_semantic_scholar(client, aq, brief)
+                )
         if "crossref" in enabled_sources:
             tasks["crossref"] = asyncio.create_task(
                 _search_crossref(client, query, brief)
@@ -50,6 +81,10 @@ async def search(
             tasks["openalex"] = asyncio.create_task(
                 _search_openalex(client, query, brief)
             )
+            for i, aq in enumerate(alt_queries, 1):
+                tasks[f"openalex_q{i+1}"] = asyncio.create_task(
+                    _search_openalex(client, aq, brief)
+                )
         if "arxiv" in enabled_sources:
             tasks["arxiv"] = asyncio.create_task(
                 asyncio.to_thread(_search_arxiv_sync, query, brief)
@@ -58,6 +93,10 @@ async def search(
             tasks["pubmed"] = asyncio.create_task(
                 asyncio.to_thread(_search_pubmed_sync, query, brief)
             )
+            for i, aq in enumerate(alt_queries, 1):
+                tasks[f"pubmed_q{i+1}"] = asyncio.create_task(
+                    asyncio.to_thread(_search_pubmed_sync, aq, brief)
+                )
 
         # ── New global open-access sources ──────────────────────────────────
         if "core" in enabled_sources:
@@ -134,10 +173,20 @@ async def search(
 
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
+    # Known multi-word source keys that should not be split on first underscore
+    _MULTIWORD_KEYS = {"semantic_scholar", "europe_pmc", "who_iris"}
+
     sources: list[SourceIn] = []
     for source_name, result in zip(tasks.keys(), results):
-        # Normalise translated-query task names back to their base API key
-        api_key = source_name.split("_")[0] if "_" in source_name else source_name
+        # Normalise task names: strip language/query suffixes to get canonical API key
+        # e.g. "semantic_scholar_q2" → "semantic_scholar",  "core_Chinese..." → "core"
+        api_key = source_name
+        for known in _MULTIWORD_KEYS:
+            if source_name.startswith(known):
+                api_key = known
+                break
+        else:
+            api_key = source_name.split("_")[0] if "_" in source_name else source_name
         if isinstance(result, Exception):
             log.warning("Error searching %s: %s", source_name, result)
         elif isinstance(result, list):
