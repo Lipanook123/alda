@@ -64,12 +64,61 @@ const TOKENS_IN_PER_SOURCE  = 150;  // input
 const TOKENS_OUT_PER_SOURCE =  25;  // output (short JSON score)
 
 // ──────────────────────────────────────────────
+// Activity log
+// ──────────────────────────────────────────────
+const _log = [];  // {ts, level, msg, detail}
+
+function appLog(level, msg, detail = null) {
+  const entry = { ts: new Date(), level, msg, detail };
+  _log.push(entry);
+  const el = document.getElementById("log-content");
+  if (!el) return;
+  const row = document.createElement("div");
+  row.className = `log-row log-${level}`;
+  const time = entry.ts.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  row.innerHTML =
+    `<span class="log-ts">${time}</span>` +
+    `<span class="log-level">${level.toUpperCase()}</span>` +
+    `<span class="log-msg">${esc(msg)}${detail ? `<span class="log-detail"> — ${esc(String(detail))}</span>` : ""}</span>`;
+  el.appendChild(row);
+  el.scrollTop = el.scrollHeight;
+  // Badge on log button
+  const badge = document.getElementById("btn-open-log");
+  if (badge && level === "error") badge.classList.add("log-btn-error");
+}
+
+function openLogModal() {
+  document.getElementById("log-modal").classList.remove("hidden");
+  document.getElementById("btn-open-log").classList.remove("log-btn-error");
+}
+
+function closeLogModal() {
+  document.getElementById("log-modal").classList.add("hidden");
+}
+
+function copyLog() {
+  const text = _log.map(e => {
+    const time = e.ts.toISOString().slice(11, 19);
+    return `[${time}] [${e.level.toUpperCase()}] ${e.msg}${e.detail ? " — " + String(e.detail) : ""}`;
+  }).join("\n");
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById("btn-copy-log");
+    const orig = btn.textContent;
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    prompt("Copy this log:", text);
+  });
+}
+
+// ──────────────────────────────────────────────
 // State
 // ──────────────────────────────────────────────
 let state = {
   queryId: null,
   jobId: null,
   pollInterval: null,
+  pollErrorCount: 0,
   resultsPage: 1,
   pendingFile: null,
   llmProvider: null,
@@ -88,12 +137,24 @@ async function api(method, path, body = null, isForm = false) {
   } else if (body && isForm) {
     opts.body = body;
   }
-  const resp = await fetch(`${BACKEND_URL}${path}`, opts);
+  const url = `${BACKEND_URL}${path}`;
+  // Only log non-poll requests to avoid spamming the log
+  const isPoll = path.includes("/search/status/");
+  if (!isPoll) appLog("info", `${method} ${path}`, body && !isForm ? JSON.stringify(body).slice(0, 200) : null);
+  let resp;
+  try {
+    resp = await fetch(url, opts);
+  } catch (netErr) {
+    appLog("error", `${method} ${path} — network error`, netErr.message);
+    throw netErr;
+  }
   if (!resp.ok) {
     let msg = `HTTP ${resp.status}`;
     try { const err = await resp.json(); msg = err.detail || msg; } catch (_) {}
+    appLog("error", `${method} ${path} → ${resp.status}`, msg);
     throw new Error(msg);
   }
+  if (!isPoll) appLog("info", `${method} ${path} → ${resp.status} OK`);
   const ct = resp.headers.get("content-type") || "";
   if (ct.includes("application/json")) return resp.json();
   if (ct.includes("text/csv") || ct.includes("application/octet-stream")) return resp.blob();
@@ -183,6 +244,8 @@ async function checkHealth() {
 
     state.llmProvider = h.llm_provider || null;
     state.llmModel = h.llm_model || null;
+    appLog("info", "Health check OK",
+      `db=${h.db}, llm=${h.llm_configured ? (h.llm_provider + "/" + h.llm_model) : "not configured"}`);
 
     if (!h.llm_configured) {
       showSetupIfNeeded();
@@ -192,6 +255,7 @@ async function checkHealth() {
       updateTokenEstimate();
     }
   } catch (e) {
+    appLog("error", "Health check failed", e.message);
     setDot("dot-db", "red", `Cannot reach the server: ${e.message}`);
     setDot("dot-llm", "red", "");
     setDot("dot-scraping", "red", "");
@@ -229,12 +293,14 @@ async function parseMission() {
     const result = await api("POST", "/api/v1/mission/parse", { text });
     state.queryId = result.query_id;
     state.maxResults = result.structured.max_results || 200;
+    appLog("info", "Brief parsed", `query_id=${result.query_id}, topic="${result.structured.topic}", max_results=${state.maxResults}`);
     renderBrief(result.structured);
     showStatus("parse-status", "Done! Review the summary, then run your search.", "success");
     loadRecentQueries();
     updateGuidedBanner(2);
     updateTokenEstimate();
   } catch (e) {
+    appLog("error", "Parse brief failed", e.message);
     showStatus("parse-status", `Something went wrong: ${e.message}`, "error");
   }
 }
@@ -371,6 +437,8 @@ async function startSearch() {
       max_token_budget: maxTokenBudget,
     });
     state.jobId = result.job_id;
+    state.pollErrorCount = 0;
+    appLog("info", "Search started", `job_id=${result.job_id}, sources=${sources.join(",")}`);
     document.getElementById("search-progress").classList.remove("hidden");
     document.getElementById("btn-search").disabled = true;
     document.getElementById("btn-search").textContent = "Searching…";
@@ -390,16 +458,21 @@ async function pollStatus() {
   if (!state.jobId) return;
   try {
     const job = await api("GET", `/api/v1/search/status/${state.jobId}`);
+    state.pollErrorCount = 0;
     updateProgress(job);
+    showStatus("search-status-msg", "");  // clear any previous connection error
 
     if (["complete", "saturated", "failed"].includes(job.status)) {
       clearInterval(state.pollInterval);
       state.pollInterval = null;
       document.getElementById("btn-search").disabled = false;
       document.getElementById("btn-search").textContent = "Start Search";
+      appLog("info", `Search job ${state.jobId} finished`, `status=${job.status}, sources=${job.progress.total_sources_found}`);
 
       if (job.status === "failed") {
-        showStatus("search-status-msg", "Search failed — please try again.", "error");
+        const errMsg = job.progress.error || "unknown error";
+        appLog("error", "Search job reported failure", errMsg);
+        showStatus("search-status-msg", `Search failed: ${errMsg}`, "error");
       } else {
         const total = job.progress.total_sources_found;
         showStatus("search-status-msg",
@@ -409,8 +482,37 @@ async function pollStatus() {
       }
     }
   } catch (e) {
-    showStatus("search-status-msg", `Connection issue: ${e.message}`, "error");
+    state.pollErrorCount++;
+    appLog("error", `Poll attempt ${state.pollErrorCount} failed`, e.message);
+    if (state.pollErrorCount >= 5) {
+      clearInterval(state.pollInterval);
+      state.pollInterval = null;
+      document.getElementById("btn-search").disabled = false;
+      document.getElementById("btn-search").textContent = "Start Search";
+      showStatus("search-status-msg",
+        `Lost connection to server after ${state.pollErrorCount} attempts. ` +
+        `Open the <strong>Log</strong> for details, then try searching again.`, "error");
+      document.getElementById("search-status-msg").innerHTML =
+        `Lost connection to server. ` +
+        `<button class="secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;margin-left:0.5rem" ` +
+        `onclick="retryPoll()">Reconnect</button> ` +
+        `or <button class="secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem" ` +
+        `onclick="openLogModal()">View log</button>`;
+    } else {
+      showStatus("search-status-msg",
+        `Connection issue (attempt ${state.pollErrorCount}/5): ${e.message}`, "error");
+    }
   }
+}
+
+function retryPoll() {
+  if (!state.jobId) return;
+  state.pollErrorCount = 0;
+  showStatus("search-status-msg", "Reconnecting…");
+  document.getElementById("btn-search").disabled = true;
+  document.getElementById("btn-search").textContent = "Searching…";
+  appLog("info", "Retrying poll for job", state.jobId);
+  startPolling();
 }
 
 function updateProgress(job) {
@@ -1013,4 +1115,8 @@ Object.assign(window, {
   doExport,
   runClustering,
   selectQuery,
+  openLogModal,
+  closeLogModal,
+  copyLog,
+  retryPoll,
 });
