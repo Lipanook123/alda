@@ -95,6 +95,10 @@ def _parse_with_llm(text: str) -> StructuredBrief:
     else:
         date_range = None
 
+    source_types = data.get("source_types", ["both"])
+    if isinstance(source_types, str):
+        source_types = [source_types]
+
     return StructuredBrief(
         topic=data.get("topic", text[:100]),
         keywords=data.get("keywords", []),
@@ -102,7 +106,7 @@ def _parse_with_llm(text: str) -> StructuredBrief:
         inclusion_criteria=data.get("inclusion_criteria", []),
         exclusion_criteria=data.get("exclusion_criteria", []),
         date_range=date_range,
-        source_types=data.get("source_types", ["both"]),
+        source_types=source_types,
         max_results=data.get("max_results", 500),
         raw_text=text,
     )
