@@ -13,6 +13,7 @@ from backend.db import database
 from backend.search import academic, grey
 from backend.search.dedup import deduplicate
 from backend.processing import summarizer
+from backend.processing.translator import detect_language, translate_to_english
 from backend.agent import iterative
 
 log = logging.getLogger(__name__)
@@ -79,10 +80,12 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
         database.update_query_status(conn, query_id, "running")
 
     # Separate academic vs grey sources
-    academic_sources_requested = [
-        s for s in request.sources
-        if s in ("semantic_scholar", "crossref", "openalex", "arxiv", "pubmed")
-    ]
+    _ACADEMIC_SOURCES = frozenset({
+        "semantic_scholar", "crossref", "openalex", "arxiv", "pubmed",
+        "core", "europe_pmc", "doaj", "base", "openaire",
+        "scielo", "jstage", "cyberleninka", "eric", "who_iris", "clinicaltrials",
+    })
+    academic_sources_requested = [s for s in request.sources if s in _ACADEMIC_SOURCES]
     grey_sources_requested = [
         s for s in request.sources
         if s in ("google_cse", "bing", "duckduckgo")
@@ -117,6 +120,20 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
         # Deduplicate
         unique_candidates, dup_count = deduplicate(candidates, existing_dois, existing_titles)
         total_duplicates += dup_count
+
+        # Language detection + title/abstract translation for non-English content
+        if _config.is_llm_configured():
+            for src in unique_candidates:
+                text = src.abstract or src.title or ""
+                lang = detect_language(text)
+                if lang:
+                    src.metadata["detected_language"] = lang
+                    translated_title = translate_to_english(src.title, lang)
+                    translated_abstract = translate_to_english(src.abstract or "", lang)
+                    if translated_title:
+                        src.metadata["translated_title"] = translated_title
+                    if translated_abstract:
+                        src.metadata["translated_abstract"] = translated_abstract
 
         # Relevance scoring (LLM if configured, budget permitting)
         if request.use_llm_relevance and _config.is_llm_configured() and unique_candidates:

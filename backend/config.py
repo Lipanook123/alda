@@ -77,6 +77,7 @@ class Settings(BaseSettings):
 
     # Search API keys (optional)
     semantic_scholar_api_key: str | None = None
+    core_api_key: str | None = None  # optional; increases CORE rate limit from 10→100 req/min
     google_cse_id: str | None = None
     google_api_key: str | None = None
     bing_api_key: str | None = None

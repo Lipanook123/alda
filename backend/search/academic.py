@@ -5,12 +5,14 @@ import asyncio
 import logging
 import re
 import urllib.parse
+import xml.etree.ElementTree as ET
 from typing import Any
 
 import httpx
 
 from backend.api.models import SourceIn, StructuredBrief
 from backend.config import settings
+from backend.search.translator import TARGET_LANGUAGES, build_translated_query
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +36,7 @@ async def search(
     tasks: dict[str, asyncio.Task] = {}
 
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": _UA}) as client:
+        # ── Original five academic sources ──────────────────────────────────
         if "semantic_scholar" in enabled_sources:
             tasks["semantic_scholar"] = asyncio.create_task(
                 _search_semantic_scholar(client, query, brief)
@@ -55,13 +58,91 @@ async def search(
                 asyncio.to_thread(_search_pubmed_sync, query, brief)
             )
 
+        # ── New global open-access sources ──────────────────────────────────
+        if "core" in enabled_sources:
+            tasks["core"] = asyncio.create_task(_search_core(client, query, brief))
+            for lang in TARGET_LANGUAGES.get("core", []):
+                tq = build_translated_query(brief.keywords, lang)
+                if tq:
+                    tasks[f"core_{lang}"] = asyncio.create_task(_search_core(client, tq, brief))
+
+        if "europe_pmc" in enabled_sources:
+            tasks["europe_pmc"] = asyncio.create_task(_search_europe_pmc(client, query, brief))
+
+        if "doaj" in enabled_sources:
+            tasks["doaj"] = asyncio.create_task(_search_doaj(client, query, brief))
+            for lang in TARGET_LANGUAGES.get("doaj", []):
+                tq = build_translated_query(brief.keywords, lang)
+                if tq:
+                    tasks[f"doaj_{lang}"] = asyncio.create_task(_search_doaj(client, tq, brief))
+
+        if "base" in enabled_sources:
+            tasks["base"] = asyncio.create_task(_search_base(client, query, brief))
+            for lang in TARGET_LANGUAGES.get("base", []):
+                tq = build_translated_query(brief.keywords, lang)
+                if tq:
+                    tasks[f"base_{lang}"] = asyncio.create_task(_search_base(client, tq, brief))
+
+        if "openaire" in enabled_sources:
+            tasks["openaire"] = asyncio.create_task(_search_openaire(client, query, brief))
+
+        # ── Regional / language-specific sources ───────────────────────────
+        if "scielo" in enabled_sources:
+            tasks["scielo"] = asyncio.create_task(_search_scielo(client, query, brief))
+            for lang in TARGET_LANGUAGES.get("scielo", []):
+                tq = build_translated_query(brief.keywords, lang)
+                if tq:
+                    tasks[f"scielo_{lang}"] = asyncio.create_task(
+                        _search_scielo(client, tq, brief)
+                    )
+
+        if "jstage" in enabled_sources:
+            tasks["jstage"] = asyncio.create_task(
+                asyncio.to_thread(_search_jstage_sync, query, brief)
+            )
+            for lang in TARGET_LANGUAGES.get("jstage", []):
+                tq = build_translated_query(brief.keywords, lang)
+                if tq:
+                    tasks[f"jstage_{lang}"] = asyncio.create_task(
+                        asyncio.to_thread(_search_jstage_sync, tq, brief)
+                    )
+
+        if "cyberleninka" in enabled_sources:
+            tq = build_translated_query(brief.keywords, "Russian") or query
+            tasks["cyberleninka"] = asyncio.create_task(
+                _search_cyberleninka(client, tq, brief)
+            )
+
+        if "who_iris" in enabled_sources:
+            tasks["who_iris"] = asyncio.create_task(_search_who_iris(client, query, brief))
+            for lang in TARGET_LANGUAGES.get("who_iris", []):
+                tq = build_translated_query(brief.keywords, lang)
+                if tq:
+                    tasks[f"who_iris_{lang}"] = asyncio.create_task(
+                        _search_who_iris(client, tq, brief)
+                    )
+
+        # ── Specialist sources ──────────────────────────────────────────────
+        if "eric" in enabled_sources:
+            tasks["eric"] = asyncio.create_task(_search_eric(client, query, brief))
+
+        if "clinicaltrials" in enabled_sources:
+            tasks["clinicaltrials"] = asyncio.create_task(
+                _search_clinicaltrials(client, query, brief)
+            )
+
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     sources: list[SourceIn] = []
     for source_name, result in zip(tasks.keys(), results):
+        # Normalise translated-query task names back to their base API key
+        api_key = source_name.split("_")[0] if "_" in source_name else source_name
         if isinstance(result, Exception):
             log.warning("Error searching %s: %s", source_name, result)
         elif isinstance(result, list):
+            # Tag with canonical api name so source breakdown is clean
+            for src in result:
+                src.metadata.setdefault("api", api_key)
             sources.extend(result)
 
     return sources
@@ -358,5 +439,642 @@ def _parse_medline(raw: str, brief: StructuredBrief) -> list[SourceIn]:
             venue=journal or None,
             source_type="academic",
             metadata={"api": "pubmed", "pmid": pmid},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# CORE (core.ac.uk) — 300M+ open-access papers globally
+# ---------------------------------------------------------------------------
+
+async def _search_core(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    headers: dict[str, str] = {}
+    if settings.core_api_key:
+        headers["Authorization"] = f"Bearer {settings.core_api_key}"
+
+    resp = await client.get(
+        "https://api.core.ac.uk/v3/search/works",
+        params={"q": query, "limit": min(settings.max_results_per_source, 100), "offset": 0},
+        headers=headers,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    sources: list[SourceIn] = []
+    for item in data.get("results", []):
+        authors = [a.get("name", "") for a in (item.get("authors") or [])]
+        doi = item.get("doi")
+        urls = item.get("sourceFulltextUrls") or []
+        url = item.get("downloadUrl") or (urls[0] if urls else None) or (
+            f"https://doi.org/{doi}" if doi else ""
+        )
+        sources.append(SourceIn(
+            title=item.get("title") or "Untitled",
+            authors=authors,
+            year=item.get("yearPublished"),
+            doi=doi,
+            url=url,
+            abstract=item.get("abstract"),
+            citation_count=item.get("citationCount"),
+            source_type="academic",
+            metadata={"api": "core", "core_id": item.get("id")},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# Europe PMC — 40M biomedical / life-science papers
+# ---------------------------------------------------------------------------
+
+async def _search_europe_pmc(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    q = query
+    if brief.date_range:
+        lo, hi = brief.date_range
+        q += f" (FIRST_PDATE:[{lo}-01-01 TO {hi}-12-31])"
+
+    resp = await client.get(
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        params={
+            "query": q,
+            "resultType": "core",
+            "format": "json",
+            "pageSize": min(settings.max_results_per_source, 100),
+            "cursorMark": "*",
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    sources: list[SourceIn] = []
+    for item in data.get("resultList", {}).get("result", []):
+        author_str = item.get("authorString") or ""
+        authors = [a.strip().rstrip(".") for a in author_str.split(",") if a.strip()]
+        doi = item.get("doi")
+        pmid = item.get("pmid") or item.get("id")
+        src = item.get("source", "MED")
+        url = (
+            f"https://europepmc.org/article/{src}/{pmid}" if pmid
+            else f"https://doi.org/{doi}" if doi else ""
+        )
+        try:
+            year = int(item.get("pubYear") or 0) or None
+        except (ValueError, TypeError):
+            year = None
+        sources.append(SourceIn(
+            title=item.get("title") or "Untitled",
+            authors=authors,
+            year=year,
+            doi=doi,
+            url=url,
+            abstract=item.get("abstractText"),
+            venue=item.get("journalTitle"),
+            citation_count=item.get("citedByCount"),
+            source_type="academic",
+            metadata={"api": "europe_pmc", "pmid": pmid},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# DOAJ — Directory of Open Access Journals (all languages)
+# ---------------------------------------------------------------------------
+
+async def _search_doaj(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    encoded = urllib.parse.quote(query)
+    resp = await client.get(
+        f"https://doaj.org/api/v4/search/articles/{encoded}",
+        params={"page": 1, "pageSize": min(settings.max_results_per_source, 100)},
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    sources: list[SourceIn] = []
+    for item in data.get("results", []):
+        bib = item.get("bibjson") or {}
+        title = bib.get("title") or "Untitled"
+        authors = [a.get("name", "") for a in (bib.get("author") or [])]
+        year_str = bib.get("year") or ""
+        try:
+            year = int(year_str) if year_str else None
+        except (ValueError, TypeError):
+            year = None
+        doi = next(
+            (i.get("id") for i in (bib.get("identifier") or []) if i.get("type") == "doi"),
+            None,
+        )
+        url = next(
+            (ln.get("url") for ln in (bib.get("link") or []) if ln.get("type") in ("fulltext", "doi")),
+            None,
+        ) or (f"https://doi.org/{doi}" if doi else "")
+        sources.append(SourceIn(
+            title=title,
+            authors=authors,
+            year=year,
+            doi=doi,
+            url=url,
+            abstract=bib.get("abstract"),
+            venue=(bib.get("journal") or {}).get("title"),
+            source_type="academic",
+            metadata={"api": "doaj"},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# BASE (Bielefeld Academic Search Engine) — 400M+ multilingual documents
+# ---------------------------------------------------------------------------
+
+async def _search_base(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    params: dict[str, Any] = {
+        "func": "PerformSearch",
+        "query": query,
+        "format": "json",
+        "hits": min(settings.max_results_per_source, 100),
+        "offset": 0,
+    }
+    if brief.date_range:
+        lo, hi = brief.date_range
+        params["filter[dcdate]"] = f"[{lo} TO {hi}]"
+
+    resp = await client.get(
+        "https://api.base-search.net/cgi-bin/BaseHttpSearchInterface.fcgi",
+        params=params,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    def _listify(val: Any) -> list:
+        if val is None:
+            return []
+        return val if isinstance(val, list) else [val]
+
+    sources: list[SourceIn] = []
+    for doc in data.get("response", {}).get("docs", []):
+        title_raw = doc.get("dctitle")
+        titles = _listify(title_raw)
+        title = titles[0] if titles else "Untitled"
+
+        creators = _listify(doc.get("dccreator"))
+
+        identifiers = _listify(doc.get("dcidentifier"))
+        doi = next(
+            (i.replace("doi:", "").strip() for i in identifiers if str(i).startswith("doi:")),
+            None,
+        )
+        if not doi:
+            doi = next((i for i in identifiers if re.match(r"10\.\d{4,}/", str(i))), None)
+
+        url = doc.get("dclink") or (f"https://doi.org/{doi}" if doi else "")
+
+        desc_raw = doc.get("dcdescription") or ""
+        abstract = " ".join(_listify(desc_raw)) if isinstance(desc_raw, list) else desc_raw or None
+
+        date_vals = _listify(doc.get("dcdate") or doc.get("dcyear"))
+        year_str = date_vals[0] if date_vals else ""
+        year_match = re.search(r"\b(19|20)\d{2}\b", str(year_str))
+        year = int(year_match.group()) if year_match else None
+
+        sources.append(SourceIn(
+            title=title,
+            authors=creators,
+            year=year,
+            doi=doi,
+            url=url,
+            abstract=abstract or None,
+            source_type="academic",
+            metadata={"api": "base"},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# OpenAIRE — European multilingual open science
+# ---------------------------------------------------------------------------
+
+async def _search_openaire(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    params: dict[str, Any] = {
+        "search": query,
+        "format": "json",
+        "size": min(settings.max_results_per_source, 100),
+        "page": 1,
+        "sortBy": "relevance",
+    }
+    if brief.date_range:
+        lo, hi = brief.date_range
+        params["fromDateAccepted"] = f"{lo}-01-01"
+        params["toDateAccepted"] = f"{hi}-12-31"
+
+    resp = await client.get("https://api.openaire.eu/graph/publications", params=params)
+    resp.raise_for_status()
+    data = resp.json()
+
+    sources: list[SourceIn] = []
+    for item in data.get("results", []):
+        titles = item.get("titles") or []
+        title = titles[0].get("value") if titles else "Untitled"
+
+        authors = [a.get("fullName", "") for a in (item.get("authors") or [])]
+
+        pub_date = item.get("publicationDate") or ""
+        year_match = re.search(r"\b(19|20)\d{2}\b", pub_date)
+        year = int(year_match.group()) if year_match else None
+
+        identifiers = item.get("identifiers") or []
+        doi = next((i.get("value") for i in identifiers if i.get("scheme") == "doi"), None)
+
+        instances = item.get("instances") or []
+        url = next((inst.get("url") for inst in instances if inst.get("url")), None)
+        url = url or (f"https://doi.org/{doi}" if doi else "")
+
+        descriptions = item.get("descriptions") or []
+        abstract = descriptions[0].get("value") if descriptions else None
+
+        journals = item.get("journals") or []
+        venue = journals[0].get("name") if journals else None
+
+        sources.append(SourceIn(
+            title=title,
+            authors=authors,
+            year=year,
+            doi=doi,
+            url=url,
+            abstract=abstract,
+            venue=venue,
+            source_type="academic",
+            metadata={"api": "openaire"},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# SciELO — Latin American / Spanish / Portuguese research
+# ---------------------------------------------------------------------------
+
+async def _search_scielo(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    resp = await client.get(
+        "https://search.scielo.org/api/v1/article/",
+        params={
+            "q": query,
+            "count": min(settings.max_results_per_source, 100),
+            "from": 1,
+            "output": "json",
+            "lang": "en",
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    def _first_dict_val(d: Any) -> str | None:
+        if not d:
+            return None
+        if isinstance(d, dict):
+            return next(iter(d.values()), None)
+        if isinstance(d, list):
+            v = d[0] if d else None
+            return _first_dict_val(v) if isinstance(v, dict) else v
+        return str(d)
+
+    sources: list[SourceIn] = []
+    for item in (data.get("hits") or {}).get("hits", []):
+        src = item.get("_source") or {}
+
+        title = _first_dict_val(src.get("ti") or src.get("title")) or "Untitled"
+
+        authors_raw = src.get("au") or []
+        authors = authors_raw if isinstance(authors_raw, list) else [authors_raw]
+
+        doi = src.get("doi")
+        url_raw = src.get("ur") or (f"https://doi.org/{doi}" if doi else "")
+        url = url_raw[0] if isinstance(url_raw, list) else url_raw
+
+        abstract = _first_dict_val(src.get("ab"))
+
+        year_str = str(src.get("da") or src.get("year") or "")
+        year_match = re.search(r"\b(19|20)\d{2}\b", year_str)
+        year = int(year_match.group()) if year_match else None
+
+        venue = src.get("ta") or None
+
+        sources.append(SourceIn(
+            title=title,
+            authors=authors,
+            year=year,
+            doi=doi,
+            url=url,
+            abstract=abstract,
+            venue=venue,
+            source_type="academic",
+            metadata={"api": "scielo"},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# J-STAGE — Japanese science journals (Atom XML)
+# ---------------------------------------------------------------------------
+
+def _search_jstage_sync(query: str, brief: StructuredBrief) -> list[SourceIn]:
+    resp = httpx.get(
+        "https://api.jstage.jst.go.jp/searchapi/do",
+        params={
+            "service": 3,
+            "text": query,
+            "lang": 1,  # Japanese and English results
+            "count": min(settings.max_results_per_source, 100),
+            "start": 1,
+        },
+        timeout=30.0,
+        headers={"User-Agent": _UA},
+    )
+    resp.raise_for_status()
+
+    ns = {
+        "atom":  "http://www.w3.org/2005/Atom",
+        "prism": "http://prismstandard.org/namespaces/basic/2.0/",
+        "dc":    "http://purl.org/dc/elements/1.1/",
+    }
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as e:
+        log.warning("J-STAGE XML parse error: %s", e)
+        return []
+
+    sources: list[SourceIn] = []
+    for entry in root.findall("atom:entry", ns):
+        title_el = entry.find("atom:title", ns)
+        title = (title_el.text or "").strip() or "Untitled"
+
+        authors = []
+        for author_el in entry.findall("atom:author", ns):
+            name_el = author_el.find("atom:name", ns)
+            if name_el is not None and name_el.text:
+                authors.append(name_el.text.strip())
+
+        id_el = entry.find("atom:id", ns)
+        url = (id_el.text or "").strip()
+
+        summary_el = entry.find("atom:summary", ns)
+        abstract = (summary_el.text or "").strip() or None
+
+        pub_el = entry.find("atom:published", ns)
+        year = None
+        if pub_el is not None and pub_el.text:
+            ym = re.search(r"\b(19|20)\d{2}\b", pub_el.text)
+            year = int(ym.group()) if ym else None
+
+        doi_el = entry.find("prism:doi", ns) or entry.find("dc:identifier", ns)
+        doi = (doi_el.text or "").strip() or None
+
+        sources.append(SourceIn(
+            title=title,
+            authors=authors,
+            year=year,
+            doi=doi,
+            url=url,
+            abstract=abstract,
+            source_type="academic",
+            metadata={"api": "jstage"},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# CyberLeninka — Russian open-access repository
+# ---------------------------------------------------------------------------
+
+async def _search_cyberleninka(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    resp = await client.post(
+        "https://cyberleninka.ru/api/search",
+        json={
+            "q": query,
+            "page": 0,
+            "size": min(settings.max_results_per_source, 25),
+            "sortBy": "relevance",
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    sources: list[SourceIn] = []
+    for item in data.get("articles", []):
+        doi = item.get("doi") or None
+        art_id = item.get("id", "")
+        url = (
+            f"https://cyberleninka.ru/article/n/{art_id}" if art_id
+            else f"https://doi.org/{doi}" if doi else ""
+        )
+        raw_authors = item.get("authors") or []
+        if raw_authors and isinstance(raw_authors[0], dict):
+            authors = [a.get("name", "") for a in raw_authors]
+        else:
+            authors = [str(a) for a in raw_authors]
+
+        journal = item.get("journal") or {}
+        venue = journal.get("name") if isinstance(journal, dict) else None
+
+        sources.append(SourceIn(
+            title=item.get("name") or "Untitled",
+            authors=authors,
+            year=item.get("year"),
+            doi=doi,
+            url=url,
+            abstract=item.get("annotation"),
+            venue=venue,
+            source_type="academic",
+            metadata={"api": "cyberleninka"},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# ERIC — US Education Resources Information Center
+# ---------------------------------------------------------------------------
+
+async def _search_eric(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    params: dict[str, Any] = {
+        "search": query,
+        "fields": "title,author,publicationdateyear,description,url,doi,sourcetitle,id",
+        "format": "json",
+        "rows": min(settings.max_results_per_source, 100),
+        "start": 0,
+    }
+    if brief.date_range:
+        lo, hi = brief.date_range
+        params["dateRange"] = f"{lo}-{hi}"
+
+    resp = await client.get("https://api.ies.ed.gov/eric/", params=params)
+    resp.raise_for_status()
+    data = resp.json()
+
+    sources: list[SourceIn] = []
+    for item in data.get("response", {}).get("docs", []):
+        eric_id = item.get("id", "")
+        doi = item.get("doi")
+        url = item.get("url") or (
+            f"https://eric.ed.gov/?id={eric_id}" if eric_id
+            else f"https://doi.org/{doi}" if doi else ""
+        )
+        try:
+            year = int(item.get("publicationdateyear") or 0) or None
+        except (ValueError, TypeError):
+            year = None
+        authors_raw = item.get("author") or []
+        authors = [authors_raw] if isinstance(authors_raw, str) else list(authors_raw)
+
+        sources.append(SourceIn(
+            title=item.get("title") or "Untitled",
+            authors=authors,
+            year=year,
+            doi=doi,
+            url=url,
+            abstract=item.get("description"),
+            venue=item.get("sourcetitle"),
+            source_type="academic",
+            metadata={"api": "eric", "eric_id": eric_id},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# WHO IRIS — WHO institutional repository (Arabic, Chinese, EN, FR, RU, ES)
+# ---------------------------------------------------------------------------
+
+async def _search_who_iris(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    resp = await client.get(
+        "https://iris.who.int/rest/discover/search/objects",
+        params={
+            "query": query,
+            "rpp": min(settings.max_results_per_source, 50),
+            "sort_by": "score",
+            "order": "DESC",
+            "scope": "",
+            "expand": "metadata",
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    def _get_meta(metadata: dict, key: str) -> str | None:
+        vals = metadata.get(key) or []
+        return vals[0].get("value") if vals else None
+
+    def _get_meta_list(metadata: dict, key: str) -> list[str]:
+        return [v.get("value", "") for v in (metadata.get(key) or [])]
+
+    sources: list[SourceIn] = []
+    embedded = (
+        data.get("_embedded", {})
+        .get("searchResult", {})
+        .get("_embedded", {})
+        .get("objects", [])
+    )
+    for obj in embedded:
+        item = obj.get("_embedded", {}).get("indexableObject", {})
+        metadata = item.get("metadata", {})
+
+        title = _get_meta(metadata, "dc.title") or "Untitled"
+        authors = (
+            _get_meta_list(metadata, "dc.contributor.author")
+            or _get_meta_list(metadata, "dc.creator")
+        )
+        doi = _get_meta(metadata, "dc.identifier.doi")
+        url = _get_meta(metadata, "dc.identifier.uri") or (
+            f"https://doi.org/{doi}" if doi else ""
+        )
+        abstract = _get_meta(metadata, "dc.description.abstract") or _get_meta(
+            metadata, "dc.description"
+        )
+        venue = _get_meta(metadata, "dc.publisher")
+        date_str = _get_meta(metadata, "dc.date.issued") or ""
+        ym = re.search(r"\b(19|20)\d{2}\b", date_str)
+        year = int(ym.group()) if ym else None
+
+        if not url:
+            continue
+
+        sources.append(SourceIn(
+            title=title,
+            authors=authors,
+            year=year,
+            doi=doi,
+            url=url,
+            abstract=abstract,
+            venue=venue,
+            source_type="academic",
+            metadata={"api": "who_iris"},
+        ))
+    return sources
+
+
+# ---------------------------------------------------------------------------
+# ClinicalTrials.gov — global clinical trial registry
+# ---------------------------------------------------------------------------
+
+async def _search_clinicaltrials(
+    client: httpx.AsyncClient, query: str, brief: StructuredBrief
+) -> list[SourceIn]:
+    params: dict[str, Any] = {
+        "query.term": query,
+        "pageSize": min(settings.max_results_per_source, 100),
+        "format": "json",
+    }
+    if brief.date_range:
+        lo, hi = brief.date_range
+        params["query.term"] += f" AREA[StartDate] RANGE[{lo}-01-01, {hi}-12-31]"
+
+    resp = await client.get(
+        "https://clinicaltrials.gov/api/v2/studies",
+        params=params,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    sources: list[SourceIn] = []
+    for study in data.get("studies", []):
+        protocol = study.get("protocolSection") or {}
+        id_mod = protocol.get("identificationModule") or {}
+        desc_mod = protocol.get("descriptionModule") or {}
+        status_mod = protocol.get("statusModule") or {}
+        sponsor_mod = protocol.get("sponsorCollaboratorsModule") or {}
+
+        nct_id = id_mod.get("nctId", "")
+        title = id_mod.get("briefTitle") or id_mod.get("officialTitle") or "Untitled"
+        abstract = desc_mod.get("briefSummary")
+        lead_sponsor = (sponsor_mod.get("leadSponsor") or {}).get("name", "")
+
+        start_date = (status_mod.get("startDateStruct") or {}).get("date", "")
+        ym = re.search(r"\b(19|20)\d{2}\b", start_date)
+        year = int(ym.group()) if ym else None
+
+        url = f"https://clinicaltrials.gov/study/{nct_id}" if nct_id else ""
+
+        sources.append(SourceIn(
+            title=title,
+            authors=[lead_sponsor] if lead_sponsor else [],
+            year=year,
+            doi=None,
+            url=url,
+            abstract=abstract,
+            venue="ClinicalTrials.gov",
+            source_type="academic",
+            metadata={"api": "clinicaltrials", "nct_id": nct_id},
         ))
     return sources

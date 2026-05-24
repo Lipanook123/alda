@@ -48,7 +48,9 @@ def _score_batch(
     import litellm  # noqa: PLC0415
 
     src_texts = "\n\n".join(
-        f"ID: {src.id or i}\nTitle: {src.title}\nAbstract: {(src.abstract or '')[:300]}"
+        f"ID: {src.id or i}\n"
+        f"Title: {(src.metadata or {}).get('translated_title') or src.title}\n"
+        f"Abstract: {((src.metadata or {}).get('translated_abstract') or src.abstract or '')[:300]}"
         for i, src in enumerate(batch)
     )
 

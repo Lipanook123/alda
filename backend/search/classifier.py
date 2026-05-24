@@ -117,6 +117,22 @@ _ACADEMIC_REGISTERED_DOMAINS: frozenset[str] = frozenset({
     "dspace.mit.edu",
     "repository.cam.ac.uk",
     "eprints.soton.ac.uk",
+    # New sources
+    "doaj.org",
+    "openaire.eu",
+    "scielo.org",
+    "scielo.br",
+    "scielo.cl",
+    "scielo.pt",
+    "scielo.mx",
+    "scielo.co",
+    "scielo.ar",
+    "jstage.jst.go.jp",
+    "jst.go.jp",
+    "cyberleninka.ru",
+    "eric.ed.gov",
+    "iris.who.int",
+    "clinicaltrials.gov",
 })
 
 # URL sub-path patterns that strongly indicate an academic article page

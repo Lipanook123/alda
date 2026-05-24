@@ -29,6 +29,17 @@ const SOURCE_NAMES = {
   openalex: "OpenAlex",
   arxiv: "arXiv",
   pubmed: "PubMed",
+  core: "CORE (Open Access)",
+  europe_pmc: "Europe PMC",
+  doaj: "DOAJ",
+  base: "BASE",
+  openaire: "OpenAIRE",
+  scielo: "SciELO",
+  jstage: "J-STAGE",
+  cyberleninka: "CyberLeninka",
+  eric: "ERIC",
+  who_iris: "WHO IRIS",
+  clinicaltrials: "ClinicalTrials.gov",
   google_cse: "Google CSE",
   bing: "Bing Search",
   duckduckgo: "DuckDuckGo",
@@ -638,10 +649,26 @@ function renderSourceCard(src) {
     ? ` · ${src.citation_count.toLocaleString()} citation${src.citation_count !== 1 ? "s" : ""}`
     : "";
 
+  const meta = src.metadata || {};
+  const detectedLang = meta.detected_language || "";
+  const translatedTitle = meta.translated_title || "";
+  const translatedAbstract = meta.translated_abstract || "";
+
+  const titleHtml = translatedTitle && translatedTitle !== src.title
+    ? `${esc(src.title)} <span class="title-translation">(${esc(translatedTitle)})</span>`
+    : esc(src.title);
+
+  const translationBlock = translatedAbstract
+    ? `<div class="result-translation">
+        <span class="translation-label">Translated from ${esc(detectedLang || "original language")}:</span>
+        <div class="translation-text">${esc(translatedAbstract)}</div>
+       </div>`
+    : "";
+
   return `
     <div class="result-card">
       <div class="result-title">
-        <a href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.title)}</a>
+        <a href="${esc(src.url)}" target="_blank" rel="noopener">${titleHtml}</a>
         ${relBadge}${typeBadge}
       </div>
       <div class="result-meta">
@@ -650,6 +677,7 @@ function renderSourceCard(src) {
         · ${doiLink}<a href="${esc(src.url)}" target="_blank" rel="noopener">Open source</a>
       </div>
       ${src.abstract ? `<div class="result-abstract">${esc(src.abstract)}</div>` : ""}
+      ${translationBlock}
     </div>
   `;
 }
