@@ -40,6 +40,7 @@ class SourceOut(SourceIn):
 class StructuredBrief(BaseModel):
     topic: str
     keywords: list[str]
+    search_queries: list[str] = []   # targeted Boolean queries generated from the brief
     inclusion_criteria: list[str] = []
     exclusion_criteria: list[str] = []
     date_range: tuple[int, int] | None = None

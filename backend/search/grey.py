@@ -20,11 +20,26 @@ _TIMEOUT = httpx.Timeout(20.0)
 _UA = "Mozilla/5.0 (compatible; ALDA/0.1; +https://github.com/lipanook123/alda)"
 
 
+_QUERY_META_WORDS = frozenset({
+    "systematic", "comprehensive", "thorough", "complete",
+    "search", "review", "analysis", "survey", "overview",
+    "perform", "conduct", "execute", "find", "identify",
+    "investigate", "examine", "assess", "evaluate", "determine",
+    "literature", "study", "studies", "paper", "papers",
+    "article", "articles", "source", "sources",
+})
+
+
 def _build_query(brief: StructuredBrief, extra_terms: list[str] | None = None) -> str:
-    terms = list(brief.keywords[:6])
+    if brief.search_queries:
+        base = brief.search_queries[0]
+        if extra_terms:
+            return f"{base} {' '.join(extra_terms[:3])}"
+        return base
+    filtered = [t for t in brief.keywords if t.lower() not in _QUERY_META_WORDS]
     if extra_terms:
-        terms.extend(extra_terms[:2])
-    return " ".join(terms)
+        filtered.extend(extra_terms[:2])
+    return " ".join(filtered[:6]) or " ".join(brief.keywords[:6])
 
 
 async def search(

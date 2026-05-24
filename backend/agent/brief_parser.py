@@ -11,27 +11,49 @@ _STOPWORDS = {
     "were", "be", "been", "being", "have", "has", "had", "do", "does",
     "did", "will", "would", "could", "should", "may", "might", "shall",
     "can", "need", "dare", "ought", "used", "able",
-    # Common brief verbs/nouns that aren't search terms
-    "conduct", "focus", "exclude", "include", "review", "studies", "study",
+    # Task/meta words — NOT substantive research terms
+    "conduct", "perform", "execute", "carry", "undertake", "run",
+    "find", "identify", "search", "look", "examine", "investigate",
+    "assess", "evaluate", "determine", "analyse", "analyze",
+    "systematic", "comprehensive", "thorough", "complete", "full",
+    "focus", "exclude", "include", "review", "studies", "study",
     "literature", "research", "papers", "paper", "sources", "source",
     "based", "using", "only", "also", "such", "both", "whether", "well",
+    "relevant", "related", "following", "including", "regarding",
+    "please", "want", "need", "looking",
 }
 
 _LLM_PROMPT = """\
-Parse the following research mission brief and extract structured information.
-Return ONLY a JSON object with these fields:
-- topic (string): the main research topic/question in one sentence
-- keywords (array of strings): 5-15 key search terms and concepts
-- inclusion_criteria (array of strings): what should be included (empty if not specified)
-- exclusion_criteria (array of strings): what should be excluded (empty if not specified)
-- date_range (array of two integers [start_year, end_year] or null): publication date range
-- source_types (array): one or more of ["academic", "grey", "both"]
-- max_results (integer): suggested maximum results, default 200
+You are a research librarian. Parse the research brief below and return a JSON object.
 
-Mission brief:
-{text}
+IMPORTANT:
+- The brief may start with task instructions like "perform a systematic search of", \
+"conduct a literature review on", "find papers about" — IGNORE these instructions and \
+extract only the actual research subject.
+- Keywords must be SUBSTANTIVE scientific terms only — topics, methods, organisms, \
+populations, settings, outcomes. Never include task verbs like "conduct", "systematic", \
+"search", "review", "find", "identify", "analyse".
+- search_queries are ready-to-use Boolean database queries. Use AND/OR to express \
+required combinations precisely. Prefer phrase-quoted multi-word terms.
 
-Return only the JSON object, no explanation."""
+Return ONLY this JSON (no other text):
+{{
+  "topic": "<the actual research subject in one sentence, no task instructions>",
+  "keywords": ["<5-12 substantive search terms — no meta-words>"],
+  "search_queries": [
+    "<primary Boolean query — most specific, e.g. \\"wastewater-based epidemiology\\" AND norovirus>",
+    "<secondary query — synonyms/related terms, e.g. WBE AND (norovirus OR \\"norovirus surveillance\\")>",
+    "<tertiary query — broader but still targeted, optional>"
+  ],
+  "inclusion_criteria": ["<what MUST be present for a result to be relevant>"],
+  "exclusion_criteria": ["<what disqualifies a result>"],
+  "date_range": [start_year, end_year] or null,
+  "source_types": ["academic" | "grey" | "both"],
+  "max_results": <integer, default 500>
+}}
+
+Research brief:
+{text}"""
 
 
 def parse(text: str) -> StructuredBrief:
@@ -50,10 +72,9 @@ def _parse_with_llm(text: str) -> StructuredBrief:
         model=f"{_config.get_llm_provider()}/{_config.get_llm_model()}",
         messages=[{"role": "user", "content": _LLM_PROMPT.format(text=text)}],
         api_key=_config.get_llm_api_key() or None,
-        max_tokens=1000,
+        max_tokens=1200,
     )
     content = response.choices[0].message.content
-    # Extract JSON block
     json_match = re.search(r"\{.*\}", content, re.DOTALL)
     if not json_match:
         raise ValueError("No JSON in LLM response")
@@ -68,23 +89,46 @@ def _parse_with_llm(text: str) -> StructuredBrief:
     return StructuredBrief(
         topic=data.get("topic", text[:100]),
         keywords=data.get("keywords", []),
+        search_queries=_clean_queries(data.get("search_queries", [])),
         inclusion_criteria=data.get("inclusion_criteria", []),
         exclusion_criteria=data.get("exclusion_criteria", []),
         date_range=date_range,
         source_types=data.get("source_types", ["both"]),
-        max_results=data.get("max_results", 200),
+        max_results=data.get("max_results", 500),
         raw_text=text,
     )
 
 
+def _clean_queries(queries: list) -> list[str]:
+    """Validate and clean LLM-generated search queries."""
+    result = []
+    for q in queries:
+        if isinstance(q, str) and q.strip():
+            # Reject queries that are just meta-descriptions
+            lower = q.lower()
+            if any(p in lower for p in ("focus on", "include papers", "this query")):
+                continue
+            result.append(q.strip())
+    return result[:4]
+
+
 def _parse_heuristic(text: str) -> StructuredBrief:
-    # Topic: first sentence
-    first_sentence = re.split(r"(?<=[.!?])\s", text.strip())[0]
+    # Strip leading task instructions before extracting topic
+    task_prefix_re = re.compile(
+        r"^(?:please\s+)?(?:conduct|perform|execute|carry\s+out|do|run|undertake)\s+"
+        r"(?:a\s+)?(?:systematic\s+|comprehensive\s+|thorough\s+)?(?:literature\s+)?"
+        r"(?:search|review|analysis|survey)\s+(?:of|on|for|about|into)\s*",
+        re.IGNORECASE,
+    )
+    cleaned_text = task_prefix_re.sub("", text.strip())
+
+    # Topic: first sentence of cleaned text
+    first_sentence = re.split(r"(?<=[.!?])\s", cleaned_text)[0]
     topic = first_sentence.strip()[:200]
 
     keywords: list[str] = []
 
-    # Quoted phrases
+    # Quoted phrases (highest quality)
     quoted = re.findall(r'"([^"]+)"', text)
     keywords.extend(quoted)
 
@@ -109,7 +153,12 @@ def _parse_heuristic(text: str) -> StructuredBrief:
             ):
                 keywords.append(clean)
 
-    # Limit and deduplicate
+    # Fallback: significant words from cleaned text
+    if not keywords:
+        words = re.findall(r"\b[a-zA-Z]{4,}\b", cleaned_text)
+        keywords = [w for w in words if w.lower() not in _STOPWORDS][:10]
+
+    # Deduplicate
     seen: set[str] = set()
     unique_kw: list[str] = []
     for k in keywords:
@@ -119,10 +168,8 @@ def _parse_heuristic(text: str) -> StructuredBrief:
             unique_kw.append(k)
     keywords = unique_kw[:20]
 
-    # Fallback: split text into significant words
-    if not keywords:
-        words = re.findall(r"\b[a-zA-Z]{4,}\b", text)
-        keywords = [w for w in words if w.lower() not in _STOPWORDS][:10]
+    # Build heuristic search queries (AND-based for precision)
+    search_queries = _build_heuristic_queries(keywords, cleaned_text)
 
     # Inclusion / exclusion criteria
     inclusion: list[str] = []
@@ -161,10 +208,42 @@ def _parse_heuristic(text: str) -> StructuredBrief:
     return StructuredBrief(
         topic=topic,
         keywords=keywords,
+        search_queries=search_queries,
         inclusion_criteria=inclusion,
         exclusion_criteria=exclusion,
         date_range=date_range,
         source_types=source_types,
-        max_results=200,
+        max_results=500,
         raw_text=text,
     )
+
+
+def _build_heuristic_queries(keywords: list[str], cleaned_text: str) -> list[str]:
+    """Build 1-2 AND-based search queries from keywords."""
+    if not keywords:
+        return []
+
+    # Multi-word quoted phrases are highest priority
+    phrases = [k for k in keywords if " " in k]
+    single_words = [k for k in keywords if " " not in k]
+
+    queries: list[str] = []
+
+    if phrases and single_words:
+        # Primary: quoted phrase AND top single term
+        primary_parts = [f'"{phrases[0]}"'] + single_words[:2]
+        queries.append(" AND ".join(primary_parts))
+        # Secondary: remaining single words
+        if len(single_words) > 2:
+            secondary_parts = single_words[:4]
+            queries.append(" AND ".join(secondary_parts))
+    elif phrases:
+        queries.append(" AND ".join(f'"{p}"' for p in phrases[:3]))
+    else:
+        # AND the top keywords (precision over recall)
+        core = single_words[:4]
+        queries.append(" AND ".join(core))
+        if len(single_words) > 4:
+            queries.append(" ".join(single_words[:6]))
+
+    return queries

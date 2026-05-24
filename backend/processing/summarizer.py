@@ -14,8 +14,11 @@ _BATCH_SIZE = 5
 
 _RELEVANCE_PROMPT = """\
 Research topic: {topic}
-
+{criteria_section}
 Rate the relevance of each source below to this research topic on a scale of 0.0 to 1.0.
+A score of 1.0 means directly and specifically about the research topic.
+A score below 0.3 means only tangentially related or failing an exclusion criterion.
+
 Return ONLY a JSON array: [{{"id": "<id>", "score": <float>, "reasoning": "<one sentence>"}}]
 
 Sources:
@@ -42,6 +45,15 @@ def score_relevance(
     return updated, total_tokens
 
 
+def _build_criteria_section(brief: StructuredBrief) -> str:
+    parts = []
+    if brief.inclusion_criteria:
+        parts.append("Must include: " + "; ".join(brief.inclusion_criteria[:3]))
+    if brief.exclusion_criteria:
+        parts.append("Must exclude: " + "; ".join(brief.exclusion_criteria[:3]))
+    return ("\n" + "\n".join(parts) + "\n") if parts else ""
+
+
 def _score_batch(
     batch: list[SourceIn], brief: StructuredBrief
 ) -> tuple[list[SourceIn], int]:
@@ -59,7 +71,11 @@ def _score_batch(
         messages=[
             {
                 "role": "user",
-                "content": _RELEVANCE_PROMPT.format(topic=brief.topic, sources=src_texts),
+                "content": _RELEVANCE_PROMPT.format(
+                    topic=brief.topic,
+                    criteria_section=_build_criteria_section(brief),
+                    sources=src_texts,
+                ),
             }
         ],
         api_key=_config.get_llm_api_key() or None,
