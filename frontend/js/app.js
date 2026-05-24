@@ -4,7 +4,21 @@
  * For local dev: localStorage.setItem("alda_backend_url", "http://localhost:8000")
  */
 
-const BACKEND_URL = localStorage.getItem("alda_backend_url") || "%%BACKEND_URL%%";
+const _rawBackend = localStorage.getItem("alda_backend_url") || "%%BACKEND_URL%%";
+// If the placeholder was never replaced (secret not set), prompt the user once.
+const BACKEND_URL = (_rawBackend && _rawBackend !== "%%BACKEND_URL%%") ? _rawBackend : (() => {
+  const stored = localStorage.getItem("alda_backend_url");
+  if (stored) return stored;
+  const entered = prompt(
+    "ALDA needs to know where its server is running.\n\n" +
+    "Enter your backend URL (e.g. https://alda-49ak.onrender.com):"
+  );
+  if (entered && entered.trim()) {
+    localStorage.setItem("alda_backend_url", entered.trim());
+    return entered.trim();
+  }
+  return "";
+})();
 
 // ──────────────────────────────────────────────
 // Display label maps
