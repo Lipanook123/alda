@@ -1000,6 +1000,11 @@ function showSetupIfNeeded() {
   }
 }
 
+function openSetupWizard() {
+  setupGoTo(0);
+  document.getElementById("setup-modal").classList.remove("hidden");
+}
+
 function setupGoTo(step) {
   document.querySelectorAll(".setup-step").forEach(s => s.classList.add("hidden"));
   document.getElementById(`setup-step-${step}`).classList.remove("hidden");
@@ -1108,6 +1113,7 @@ Object.assign(window, {
   setupSkip,
   closeSetup,
   selectProvider,
+  openSetupWizard,
   parseMission,
   startSearch,
   loadResults,
