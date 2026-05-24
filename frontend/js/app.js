@@ -58,6 +58,8 @@ const TOKEN_PRICING = {
   "mistral/open-mistral-7b":             [0.00025,  0.00025],
   "gemini/gemini-1.5-flash":             [0.000075, 0.0003],
   "gemini/gemini-1.5-pro":              [0.00125,  0.005],
+  "deepseek/deepseek-chat":              [0.00027,  0.00110],
+  "deepseek/deepseek-reasoner":          [0.00055,  0.00219],
 };
 // Rough per-source token estimates (title + abstract excerpt + prompt overhead)
 const TOKENS_IN_PER_SOURCE  = 150;  // input
@@ -961,6 +963,19 @@ const PROVIDERS_CONFIG = {
       "Sign in with your Google account",
       "Click <strong>Get API Key</strong>",
       "Copy the key — it starts with <code>AIza</code>",
+    ],
+  },
+  deepseek: {
+    name: "DeepSeek",
+    description: "Very affordable Chinese AI. DeepSeek-chat is excellent value.",
+    keyUrl: "https://platform.deepseek.com/api_keys",
+    keyHint: "Starts with sk-",
+    models: ["deepseek-chat", "deepseek-reasoner"],
+    steps: [
+      'Sign up or log in at <a href="https://platform.deepseek.com" target="_blank" rel="noopener">platform.deepseek.com</a>',
+      "Click <strong>API Keys</strong> in the left sidebar",
+      "Click <strong>Create new API key</strong>",
+      "Copy the key — it starts with <code>sk-</code>",
     ],
   },
   ollama: {
