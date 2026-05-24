@@ -1,7 +1,8 @@
 import json
 import logging
+import os
 from pathlib import Path
-from pydantic import computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 log = logging.getLogger(__name__)
@@ -114,7 +115,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    data_dir: Path = Path("/data")
+    # Use /data when it exists (Render persistent disk), otherwise ./data for local dev.
+    # Override with DATA_DIR env var or .env file.
+    data_dir: Path = Field(
+        default_factory=lambda: Path("/data") if Path("/data").is_dir() else Path("./data")
+    )
 
     @computed_field
     @property

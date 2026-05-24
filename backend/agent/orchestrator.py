@@ -1,6 +1,7 @@
 """Central search pipeline orchestrator."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -128,8 +129,8 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
                 lang = detect_language(text)
                 if lang:
                     src.metadata["detected_language"] = lang
-                    translated_title = translate_to_english(src.title, lang)
-                    translated_abstract = translate_to_english(src.abstract or "", lang)
+                    translated_title = await asyncio.to_thread(translate_to_english, src.title, lang)
+                    translated_abstract = await asyncio.to_thread(translate_to_english, src.abstract or "", lang)
                     if translated_title:
                         src.metadata["translated_title"] = translated_title
                     if translated_abstract:
