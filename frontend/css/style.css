@@ -555,3 +555,14 @@ footer a { color: #888; }
   font-size: 0.82rem;
   word-break: break-word;
 }
+
+/* ── No-LLM parse warning ────────────────────────────────────────────── */
+.parse-llm-warn {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}

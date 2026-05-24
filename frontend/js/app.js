@@ -330,16 +330,36 @@ function renderBrief(s) {
   const sourceDisplay = (s.source_types || [])
     .map(t => SOURCE_NAMES[t] || t).join(", ") || "All sources";
 
-  const queriesHtml = (s.search_queries || []).length
-    ? `<p><strong>Search queries that will run:</strong></p>
-       <ol class="search-queries-list">${
-         s.search_queries.map(q => `<li><code>${esc(q)}</code></li>`).join("")
-       }</ol>`
+  const llmWarning = !s.parsed_with_llm
+    ? `<div class="parse-llm-warn">
+         <strong>⚠ Basic keyword extraction only</strong> — no AI configured.
+         ALDA extracted keywords literally from your text. It cannot infer synonyms
+         (e.g. "WBE" from "wastewater epidemiology"), expand abbreviations, or infer
+         exclusion criteria. Search precision will be limited.
+         <div style="margin-top:0.5rem">
+           <button class="secondary" onclick="openSetupWizard()">Set up AI now →</button>
+         </div>
+       </div>`
     : "";
 
+  const queriesHtml = s.parsed_with_llm
+    ? ((s.search_queries || []).length
+        ? `<p><strong>Search queries that will run:</strong></p>
+           <ol class="search-queries-list">${
+             s.search_queries.map(q => `<li><code>${esc(q)}</code></li>`).join("")
+           }</ol>`
+        : "")
+    : `<p class="field-help" style="color:#888;margin-top:0.5rem">
+         Search queries require AI.
+         <a href="#" onclick="openSetupWizard();return false">Configure AI</a>
+         to generate targeted Boolean queries with synonym expansion.
+       </p>`;
+
   document.getElementById("brief-content").innerHTML = `
+    ${llmWarning}
     <p><strong>Topic:</strong> ${esc(s.topic)}</p>
-    <p><strong>Keywords extracted:</strong> ${kws || "<em>None identified</em>"}</p>
+    <p><strong>Keywords${s.parsed_with_llm ? " (including synonyms &amp; related terms)" : " extracted"}:</strong>
+       ${kws || "<em>None identified</em>"}</p>
     ${queriesHtml}
     <p><strong>Date range:</strong> ${dr}</p>
     <p><strong>Source types:</strong> ${esc(sourceDisplay)}</p>

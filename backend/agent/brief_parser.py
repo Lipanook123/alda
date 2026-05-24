@@ -24,35 +24,59 @@ _STOPWORDS = {
 }
 
 _LLM_PROMPT = """\
-You are a research librarian. Parse the research brief below and return a JSON object.
+You are an expert research librarian. Your job is to build a comprehensive literature \
+search strategy from the query below.
 
-IMPORTANT:
-- The brief may start with task instructions like "perform a systematic search of", \
-"conduct a literature review on", "find papers about" — IGNORE these instructions and \
+Do NOT just extract words from the query. You must EXPAND the search strategy using \
+domain knowledge, exactly as a specialist librarian would when building a PubMed or \
+Scopus search.
+
+Rules for keywords (8-20 terms):
+- Include ALL core concepts, synonyms, abbreviations, and related field-specific terminology
+- Expand abbreviations in both directions:
+    "WBE" → add "wastewater-based epidemiology"; "COVID-19" → add "SARS-CoV-2", "coronavirus"
+    "wastewater epidemiology" → add "WBE", "WBE surveillance"
+- Add synonyms the user did NOT write:
+    "wastewater" → also "sewage", "effluent"; "norovirus" → also "calicivirus", "NoV"
+    "heart attack" → also "myocardial infarction", "MI", "acute coronary syndrome"
+- Add field-specific terminology experts would search for:
+    WBE context → "environmental surveillance", "wastewater monitoring", "sewage monitoring"
+    drug resistance context → "antimicrobial resistance", "AMR", "antibiotic resistance genes"
+
+Rules for search_queries (2-4 Boolean strings):
+- Query 1: Most specific — phrase-quoted core concept AND primary target
+- Query 2: Abbreviation + synonym expansion with OR groups
+- Query 3 (optional): Broader catch-all using related terminology
+- Syntax: AND between required concept clusters; OR within synonym groups; \
+  "quotes" for phrases
+- Example output for "wastewater epidemiology for norovirus":
+  1. "wastewater-based epidemiology" AND norovirus
+  2. WBE AND (norovirus OR calicivirus OR NoV)
+  3. (wastewater OR sewage) AND (epidemiology OR surveillance OR monitoring) AND (norovirus OR "gastric virus")
+
+Rules for exclusion_criteria — INFER implicit exclusions from topic focus:
+- If topic is "WBE for norovirus": infer exclusions like "norovirus studies without \
+  wastewater component", "WBE studies for other pathogens only"
+- If topic is narrowly defined, infer what nearby-but-off-topic papers should be excluded
+- Also include any explicit exclusions stated in the query
+
+Strip task instructions from topic: ignore phrases like "conduct a review of", \
+"perform a systematic search on", "find papers about", "identify studies of" — \
 extract only the actual research subject.
-- Keywords must be SUBSTANTIVE scientific terms only — topics, methods, organisms, \
-populations, settings, outcomes. Never include task verbs like "conduct", "systematic", \
-"search", "review", "find", "identify", "analyse".
-- search_queries are ready-to-use Boolean database queries. Use AND/OR to express \
-required combinations precisely. Prefer phrase-quoted multi-word terms.
 
 Return ONLY this JSON (no other text):
 {{
-  "topic": "<the actual research subject in one sentence, no task instructions>",
-  "keywords": ["<5-12 substantive search terms — no meta-words>"],
-  "search_queries": [
-    "<primary Boolean query — most specific, e.g. \\"wastewater-based epidemiology\\" AND norovirus>",
-    "<secondary query — synonyms/related terms, e.g. WBE AND (norovirus OR \\"norovirus surveillance\\")>",
-    "<tertiary query — broader but still targeted, optional>"
-  ],
-  "inclusion_criteria": ["<what MUST be present for a result to be relevant>"],
-  "exclusion_criteria": ["<what disqualifies a result>"],
+  "topic": "<actual research subject — no task instructions>",
+  "keywords": ["<8-20 terms: core concepts + synonyms + abbreviations + related terms>"],
+  "search_queries": ["<2-4 Boolean query strings>"],
+  "inclusion_criteria": ["<must-haves — explicit or inferred from topic specificity>"],
+  "exclusion_criteria": ["<disqualifiers — explicit or inferred from topic focus>"],
   "date_range": [start_year, end_year] or null,
   "source_types": ["academic" | "grey" | "both"],
   "max_results": <integer, default 500>
 }}
 
-Research brief:
+Research query:
 {text}"""
 
 
@@ -72,7 +96,7 @@ def _parse_with_llm(text: str) -> StructuredBrief:
         model=f"{_config.get_llm_provider()}/{_config.get_llm_model()}",
         messages=[{"role": "user", "content": _LLM_PROMPT.format(text=text)}],
         api_key=_config.get_llm_api_key() or None,
-        max_tokens=1200,
+        max_tokens=1400,
     )
     content = response.choices[0].message.content
     json_match = re.search(r"\{.*\}", content, re.DOTALL)
@@ -95,6 +119,7 @@ def _parse_with_llm(text: str) -> StructuredBrief:
         date_range=date_range,
         source_types=data.get("source_types", ["both"]),
         max_results=data.get("max_results", 500),
+        parsed_with_llm=True,
         raw_text=text,
     )
 
@@ -104,7 +129,6 @@ def _clean_queries(queries: list) -> list[str]:
     result = []
     for q in queries:
         if isinstance(q, str) and q.strip():
-            # Reject queries that are just meta-descriptions
             lower = q.lower()
             if any(p in lower for p in ("focus on", "include papers", "this query")):
                 continue
@@ -122,7 +146,6 @@ def _parse_heuristic(text: str) -> StructuredBrief:
     )
     cleaned_text = task_prefix_re.sub("", text.strip())
 
-    # Topic: first sentence of cleaned text
     first_sentence = re.split(r"(?<=[.!?])\s", cleaned_text)[0]
     topic = first_sentence.strip()[:200]
 
@@ -168,9 +191,6 @@ def _parse_heuristic(text: str) -> StructuredBrief:
             unique_kw.append(k)
     keywords = unique_kw[:20]
 
-    # Build heuristic search queries (AND-based for precision)
-    search_queries = _build_heuristic_queries(keywords, cleaned_text)
-
     # Inclusion / exclusion criteria
     inclusion: list[str] = []
     exclusion: list[str] = []
@@ -205,45 +225,17 @@ def _parse_heuristic(text: str) -> StructuredBrief:
     else:
         source_types = ["both"]
 
+    # No search_queries — heuristic has no semantic knowledge to generate reliable queries.
+    # _build_query() in the search layer falls back to AND-joining filtered keywords.
     return StructuredBrief(
         topic=topic,
         keywords=keywords,
-        search_queries=search_queries,
+        search_queries=[],
         inclusion_criteria=inclusion,
         exclusion_criteria=exclusion,
         date_range=date_range,
         source_types=source_types,
         max_results=500,
+        parsed_with_llm=False,
         raw_text=text,
     )
-
-
-def _build_heuristic_queries(keywords: list[str], cleaned_text: str) -> list[str]:
-    """Build 1-2 AND-based search queries from keywords."""
-    if not keywords:
-        return []
-
-    # Multi-word quoted phrases are highest priority
-    phrases = [k for k in keywords if " " in k]
-    single_words = [k for k in keywords if " " not in k]
-
-    queries: list[str] = []
-
-    if phrases and single_words:
-        # Primary: quoted phrase AND top single term
-        primary_parts = [f'"{phrases[0]}"'] + single_words[:2]
-        queries.append(" AND ".join(primary_parts))
-        # Secondary: remaining single words
-        if len(single_words) > 2:
-            secondary_parts = single_words[:4]
-            queries.append(" AND ".join(secondary_parts))
-    elif phrases:
-        queries.append(" AND ".join(f'"{p}"' for p in phrases[:3]))
-    else:
-        # AND the top keywords (precision over recall)
-        core = single_words[:4]
-        queries.append(" AND ".join(core))
-        if len(single_words) > 4:
-            queries.append(" ".join(single_words[:6]))
-
-    return queries
