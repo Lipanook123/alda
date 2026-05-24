@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 
 from backend.api.models import SourceIn, StructuredBrief
 from backend.config import settings
+from backend.search.classifier import classify_url
 
 log = logging.getLogger(__name__)
 
@@ -82,11 +83,12 @@ async def _search_google_cse(client: httpx.AsyncClient, query: str) -> list[Sour
             break
 
         for item in items:
+            url = item.get("link", "")
             sources.append(SourceIn(
                 title=item.get("title", "Untitled"),
-                url=item.get("link", ""),
+                url=url,
                 abstract=item.get("snippet"),
-                source_type="grey",
+                source_type=classify_url(url),
                 metadata={"api": "google_cse"},
             ))
 
@@ -120,11 +122,12 @@ async def _search_bing(client: httpx.AsyncClient, query: str) -> list[SourceIn]:
             break
 
         for item in items:
+            url = item.get("url", "")
             sources.append(SourceIn(
                 title=item.get("name", "Untitled"),
-                url=item.get("url", ""),
+                url=url,
                 abstract=item.get("snippet"),
-                source_type="grey",
+                source_type=classify_url(url),
                 metadata={"api": "bing"},
             ))
 
@@ -192,7 +195,7 @@ def _search_duckduckgo_sync(query: str) -> list[SourceIn]:
                     title=title,
                     url=url,
                     abstract=snippet,
-                    source_type="grey",
+                    source_type=classify_url(url),
                     metadata={"api": "duckduckgo"},
                 ))
 
