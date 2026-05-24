@@ -1,6 +1,5 @@
 import json
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -13,9 +12,14 @@ router = APIRouter(prefix="/mission", tags=["mission"])
 
 @router.post("/parse", response_model=MissionBriefOut)
 async def parse_mission(body: MissionBriefIn) -> MissionBriefOut:
-    structured = brief_parser.parse(body.text)
-    query_id = str(uuid.uuid4())
+    try:
+        structured = brief_parser.parse(body.text)
+    except brief_parser.LLMNotConfiguredError:
+        raise HTTPException(status_code=503, detail="llm_not_configured")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"AI parsing failed: {e}")
 
+    query_id = str(uuid.uuid4())
     async with database.get_conn() as conn:
         database.insert_query(conn, {
             "id": query_id,
