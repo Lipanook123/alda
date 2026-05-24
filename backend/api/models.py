@@ -77,7 +77,11 @@ class QueryOut(BaseModel):
 class SearchJobRequest(BaseModel):
     query_id: str
     sources: list[str] = [
+        # Core academic databases
         "semantic_scholar", "crossref", "openalex", "arxiv", "pubmed",
+        # Global open access (on by default — free, no auth required)
+        "core", "europe_pmc", "doaj", "base", "openaire",
+        # Web
         "duckduckgo",
     ]
     use_llm_relevance: bool = True

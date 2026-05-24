@@ -242,12 +242,32 @@
         <summary class="advanced-toggle">Advanced options</summary>
         <div class="advanced-panel">
           <fieldset>
-            <legend>Academic databases</legend>
+            <legend>Core academic databases</legend>
             <label><input type="checkbox" name="source" value="semantic_scholar" checked /> Semantic Scholar</label>
             <label><input type="checkbox" name="source" value="crossref" checked /> CrossRef</label>
             <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
             <label><input type="checkbox" name="source" value="arxiv" checked /> arXiv</label>
             <label><input type="checkbox" name="source" value="pubmed" checked /> PubMed</label>
+          </fieldset>
+          <fieldset>
+            <legend>Global open access (English + multilingual)</legend>
+            <label><input type="checkbox" name="source" value="core" checked /> CORE — 300M+ open access papers from repositories worldwide</label>
+            <label><input type="checkbox" name="source" value="europe_pmc" checked /> Europe PMC — 40M biomedical papers, European focus</label>
+            <label><input type="checkbox" name="source" value="doaj" checked /> DOAJ — 10M+ articles from all-language open access journals</label>
+            <label><input type="checkbox" name="source" value="base" checked /> BASE — 400M+ docs from 10,000+ repositories (incl. Chinese, Russian, Korean, Arabic)</label>
+            <label><input type="checkbox" name="source" value="openaire" checked /> OpenAIRE — European multilingual open science</label>
+          </fieldset>
+          <fieldset>
+            <legend>Regional &amp; language-specific databases</legend>
+            <label><input type="checkbox" name="source" value="scielo" /> SciELO — Spanish &amp; Portuguese research (Latin America, Spain, Portugal)</label>
+            <label><input type="checkbox" name="source" value="jstage" /> J-STAGE — Japanese science journals</label>
+            <label><input type="checkbox" name="source" value="cyberleninka" /> CyberLeninka — Russian open access (largest Russian OA repository)</label>
+            <label><input type="checkbox" name="source" value="who_iris" /> WHO IRIS — WHO publications in Arabic, Chinese, French, Russian, Spanish, English</label>
+          </fieldset>
+          <fieldset>
+            <legend>Specialist databases</legend>
+            <label><input type="checkbox" name="source" value="eric" /> ERIC — Education research (1.7M records, US Dept of Education)</label>
+            <label><input type="checkbox" name="source" value="clinicaltrials" /> ClinicalTrials.gov — Clinical trial registrations (500K+ trials)</label>
           </fieldset>
           <fieldset>
             <legend>Web sources</legend>

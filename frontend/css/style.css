@@ -449,3 +449,28 @@ footer a { color: #888; }
 .log-row.log-warn  .log-level { color: #ffd166; }
 .log-msg { color: #cdd; word-break: break-all; }
 .log-detail { color: #888; }
+
+/* ── Translation display ─────────────────────────────────────────────── */
+.result-translation {
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: #f0f4f8;
+  border-left: 3px solid var(--alda-muted);
+  border-radius: 0 4px 4px 0;
+}
+.translation-label {
+  font-size: 0.72rem;
+  color: #888;
+  font-style: italic;
+  display: block;
+  margin-bottom: 0.15rem;
+}
+.translation-text {
+  font-size: 0.83rem;
+  color: #444;
+}
+.title-translation {
+  font-size: 0.85em;
+  color: #666;
+  font-style: italic;
+}
