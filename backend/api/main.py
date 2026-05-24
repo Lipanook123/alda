@@ -47,6 +47,11 @@ async def root():
     return RedirectResponse(url="/docs")
 
 
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
+
+
 @app.get("/api/v1/health", response_model=HealthStatus)
 async def health():
     return HealthStatus(
