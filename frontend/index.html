@@ -105,10 +105,26 @@
           <span class="status-label" id="label-scraping">Web scraping</span>
         </span>
       </li>
+      <li><button class="log-btn" id="btn-open-log" onclick="openLogModal()" title="View activity log">Log</button></li>
       <li><a href="https://github.com/lipanook123/alda" target="_blank" rel="noopener">GitHub</a></li>
     </ul>
   </nav>
 </header>
+
+<!-- ====== ACTIVITY LOG MODAL ====== -->
+<div id="log-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
+  <div class="modal-box log-modal-box">
+    <div class="log-modal-header">
+      <h3 id="log-modal-title" style="margin:0">Activity Log</h3>
+      <div style="display:flex;gap:0.5rem">
+        <button class="secondary" id="btn-copy-log" onclick="copyLog()">Copy to clipboard</button>
+        <button class="secondary" onclick="closeLogModal()">Close</button>
+      </div>
+    </div>
+    <p class="field-help" style="margin:0.5rem 0 0.75rem">All API calls, errors, and search progress — useful for diagnosing problems.</p>
+    <div id="log-content" class="log-content"></div>
+  </div>
+</div>
 
 <!-- ====== GUIDED BANNER ====== -->
 <div class="container-fluid guided-banner-wrap">

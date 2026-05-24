@@ -388,3 +388,64 @@ footer a { color: #888; }
 }
 .provider-card strong { display: block; margin-bottom: 0.25rem; color: var(--alda-primary); }
 .provider-card p { font-size: 0.8rem; color: #555; margin: 0; }
+
+/* ---- Log button (header) ---- */
+.log-btn {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: rgba(255,255,255,0.9);
+  border-radius: 4px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.log-btn:hover { background: rgba(255,255,255,0.25); }
+.log-btn.log-btn-error {
+  background: var(--alda-danger);
+  border-color: var(--alda-danger);
+  color: #fff;
+  animation: pulse-log 1.2s ease-in-out 3;
+}
+@keyframes pulse-log {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ---- Log modal ---- */
+.log-modal-box {
+  max-width: 720px;
+  width: 100%;
+}
+.log-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+.log-content {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.log-row {
+  display: grid;
+  grid-template-columns: 60px 44px 1fr;
+  gap: 0.5rem;
+  line-height: 1.5;
+}
+.log-ts { color: #666; flex-shrink: 0; }
+.log-level { font-weight: 700; flex-shrink: 0; }
+.log-row.log-info  .log-level { color: #74c69d; }
+.log-row.log-error .log-level { color: #ff6b6b; }
+.log-row.log-warn  .log-level { color: #ffd166; }
+.log-msg { color: #cdd; word-break: break-all; }
+.log-detail { color: #888; }
