@@ -106,6 +106,7 @@
         </span>
       </li>
       <li><button class="log-btn" id="btn-open-log" onclick="openLogModal()" title="View activity log">Log</button></li>
+      <li><button class="settings-btn" onclick="openSettings()" title="Settings">⚙</button></li>
       <li><a href="https://github.com/lipanook123/alda" target="_blank" rel="noopener">GitHub</a></li>
     </ul>
   </nav>
@@ -123,6 +124,103 @@
     </div>
     <p class="field-help" style="margin:0.5rem 0 0.75rem">All API calls, errors, and search progress — useful for diagnosing problems.</p>
     <div id="log-content" class="log-content"></div>
+  </div>
+</div>
+
+<!-- ====== SETTINGS MODAL ====== -->
+<div id="settings-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+  <div class="modal-box settings-modal-box">
+    <div class="settings-header">
+      <h3 id="settings-modal-title" style="margin:0">Settings</h3>
+      <button class="secondary" onclick="closeSettings()">✕</button>
+    </div>
+
+    <!-- Search behaviour -->
+    <section class="settings-section">
+      <h4>Search behaviour</h4>
+      <div class="settings-field">
+        <label>Maximum results per search</label>
+        <div class="results-options" id="results-options">
+          <button class="results-opt" data-val="200" onclick="selectMaxResults(200)">200</button>
+          <button class="results-opt active" data-val="500" onclick="selectMaxResults(500)">500</button>
+          <button class="results-opt" data-val="1000" onclick="selectMaxResults(1000)">1 000</button>
+          <button class="results-opt" data-val="2000" onclick="selectMaxResults(2000)">2 000</button>
+          <button class="results-opt" data-val="0" onclick="selectMaxResults(0)">Unlimited</button>
+          <input type="number" id="settings-max-results-custom" min="50" step="50"
+            placeholder="Custom" style="width:90px" oninput="selectMaxResultsCustom(this.value)" />
+        </div>
+        <p class="field-help">Unlimited relies on saturation detection to stop automatically (5 iterations max).</p>
+      </div>
+      <div class="settings-field">
+        <label>
+          <input type="checkbox" id="settings-use-llm" />
+          Score results for relevance using AI (on by default)
+        </label>
+      </div>
+      <div class="settings-field">
+        <label>Default spending limit per search (USD)
+          <input type="number" id="settings-budget" min="0" step="0.10" placeholder="No limit" style="width:120px" />
+        </label>
+        <p class="field-help">Leave blank for no limit. Applies when AI scoring is enabled.</p>
+      </div>
+    </section>
+
+    <!-- AI provider -->
+    <section class="settings-section">
+      <h4>AI provider</h4>
+      <div id="settings-ai-status" class="settings-ai-status"></div>
+      <button class="secondary" onclick="closeSettings(); openSetupWizard();">Change AI settings →</button>
+    </section>
+
+    <!-- Source API keys -->
+    <section class="settings-section">
+      <h4>Source API keys</h4>
+      <p class="field-help">These are optional. Providing them unlocks higher rate limits or enables additional search sources.</p>
+      <div class="settings-field">
+        <label>Semantic Scholar API key <span class="key-status" id="key-status-semantic"></span>
+          <input type="password" id="sk-semantic-scholar" autocomplete="off" placeholder="Optional — higher rate limits" />
+        </label>
+      </div>
+      <div class="settings-field">
+        <label>CORE API key <span class="key-status" id="key-status-core"></span>
+          <input type="password" id="sk-core" autocomplete="off" placeholder="Optional — 10→100 req/min" />
+        </label>
+      </div>
+      <div class="settings-field">
+        <label>Google CSE ID <span class="key-status" id="key-status-google"></span>
+          <input type="text" id="sk-google-cse-id" autocomplete="off" placeholder="Required to enable Google Search" />
+        </label>
+        <label style="margin-top:0.4rem;display:block">Google API key
+          <input type="password" id="sk-google-api-key" autocomplete="off" />
+        </label>
+      </div>
+      <div class="settings-field">
+        <label>Bing API key <span class="key-status" id="key-status-bing"></span>
+          <input type="password" id="sk-bing" autocomplete="off" placeholder="Required to enable Bing Search" />
+        </label>
+      </div>
+      <div class="btn-row" style="margin-top:0.75rem">
+        <button class="secondary" id="btn-save-keys" onclick="saveApiKeys()">Save API keys</button>
+        <span id="settings-keys-status" class="status-msg"></span>
+      </div>
+    </section>
+
+    <!-- Connection -->
+    <section class="settings-section">
+      <h4>Connection</h4>
+      <div class="settings-field">
+        <label>Backend server URL
+          <input type="url" id="settings-backend-url" placeholder="https://your-backend.onrender.com" />
+        </label>
+        <p class="field-help">Where ALDA's server is running. Saved to your browser — changes take effect on next page load.</p>
+      </div>
+      <button class="secondary" id="btn-save-url" onclick="saveBackendUrl()">Save URL &amp; reload</button>
+    </section>
+
+    <div style="text-align:right;padding-top:1rem;border-top:1px solid #dee2e6;margin-top:0.5rem">
+      <button class="secondary outline" onclick="closeSettings()" style="margin-right:0.5rem">Cancel</button>
+      <button class="primary" onclick="saveSettings()">Save settings</button>
+    </div>
   </div>
 </div>
 

@@ -44,7 +44,7 @@ class StructuredBrief(BaseModel):
     exclusion_criteria: list[str] = []
     date_range: tuple[int, int] | None = None
     source_types: list[str] = ["both"]
-    max_results: int = 200
+    max_results: int = 500
     raw_text: str
 
 
@@ -86,6 +86,7 @@ class SearchJobRequest(BaseModel):
     ]
     use_llm_relevance: bool = True
     max_token_budget: int | None = None  # stop LLM scoring when exceeded
+    max_results: int | None = None       # override brief.max_results; 0 = unlimited
 
 
 class SearchProgress(BaseModel):

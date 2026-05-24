@@ -474,3 +474,69 @@ footer a { color: #888; }
   color: #666;
   font-style: italic;
 }
+
+/* ── Settings modal ──────────────────────────────────────────────────── */
+.settings-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  color: #555;
+  line-height: 1;
+}
+.settings-btn:hover { background: #f0f0f0; color: var(--alda-primary); }
+
+.settings-modal-box {
+  max-width: 560px;
+  width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.settings-section {
+  border-top: 1px solid #dee2e6;
+  padding: 1.25rem 0 0.5rem;
+  margin-top: 0.5rem;
+}
+.settings-section h4 {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--alda-text, #222);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.settings-field {
+  margin-bottom: 1rem;
+}
+.results-options {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+  align-items: center;
+}
+.results-opt {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid #ced4da;
+  border-radius: 20px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.results-opt:hover { border-color: var(--alda-primary); color: var(--alda-primary); }
+.results-opt.active {
+  background: var(--alda-primary);
+  color: #fff;
+  border-color: var(--alda-primary);
+}
+.settings-ai-configured { color: var(--alda-success, #2d6a4f); margin: 0 0 0.75rem; font-weight: 600; }
+.key-status { font-size: 0.75rem; font-weight: 600; margin-left: 0.4rem; }
