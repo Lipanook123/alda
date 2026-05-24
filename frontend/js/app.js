@@ -997,3 +997,20 @@ function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+
+// Expose functions used in inline HTML onclick attributes (required because
+// this file is loaded as type="module", which scopes everything locally).
+Object.assign(window, {
+  switchTab,
+  setupGoTo,
+  setupSkip,
+  closeSetup,
+  selectProvider,
+  parseMission,
+  startSearch,
+  loadResults,
+  doUpload,
+  doExport,
+  runClustering,
+  selectQuery,
+});
