@@ -20,45 +20,45 @@ Scopus search.
 Rules for keywords (8-20 terms):
 - Include ALL core concepts, synonyms, abbreviations, and related field-specific terminology
 - Expand abbreviations in both directions:
-    "WBE" → add "wastewater-based epidemiology"; "COVID-19" → add "SARS-CoV-2", "coronavirus"
-    "wastewater epidemiology" → add "WBE", "WBE surveillance"
+    "WBE" -> also add "wastewater-based epidemiology"; "COVID-19" -> also add "SARS-CoV-2"
+    "wastewater epidemiology" -> also add "WBE", "WBE surveillance"
 - Add synonyms the user did NOT write:
-    "wastewater" → also "sewage", "effluent"; "norovirus" → also "calicivirus", "NoV"
-    "heart attack" → also "myocardial infarction", "MI", "acute coronary syndrome"
+    "wastewater" -> also "sewage", "effluent"; "norovirus" -> also "calicivirus", "NoV"
+    "heart attack" -> also "myocardial infarction", "MI", "acute coronary syndrome"
 - Add field-specific terminology experts would search for:
-    WBE context → "environmental surveillance", "wastewater monitoring", "sewage monitoring"
-    drug resistance context → "antimicrobial resistance", "AMR", "antibiotic resistance genes"
+    WBE context -> "environmental surveillance", "wastewater monitoring", "sewage monitoring"
+    drug resistance context -> "antimicrobial resistance", "AMR", "antibiotic resistance genes"
 
 Rules for search_queries (2-4 Boolean strings):
-- Query 1: Most specific — phrase-quoted core concept AND primary target
+- Query 1: Most specific - phrase-quoted core concept AND primary target
 - Query 2: Abbreviation + synonym expansion with OR groups
 - Query 3 (optional): Broader catch-all using related terminology
 - Syntax: AND between required concept clusters; OR within synonym groups; \
-  "quotes" for phrases
+  "quotes" for multi-word phrases
 - Example output for "wastewater epidemiology for norovirus":
   1. "wastewater-based epidemiology" AND norovirus
   2. WBE AND (norovirus OR calicivirus OR NoV)
-  3. (wastewater OR sewage) AND (epidemiology OR surveillance OR monitoring) AND (norovirus OR "gastric virus")
+  3. (wastewater OR sewage) AND (epidemiology OR surveillance OR monitoring) AND norovirus
 
-Rules for exclusion_criteria — INFER implicit exclusions from topic focus:
+Rules for exclusion_criteria - INFER implicit exclusions from topic focus:
 - If topic is "WBE for norovirus": infer exclusions like "norovirus studies without \
   wastewater component", "WBE studies for other pathogens only"
 - If topic is narrowly defined, infer what nearby-but-off-topic papers should be excluded
 - Also include any explicit exclusions stated in the query
 
 Strip task instructions from topic: ignore phrases like "conduct a review of", \
-"perform a systematic search on", "find papers about", "identify studies of" — \
+"perform a systematic search on", "find papers about", "identify studies of" - \
 extract only the actual research subject.
 
 Return ONLY this JSON (no other text):
 {{
-  "topic": "<actual research subject — no task instructions>",
+  "topic": "<actual research subject - no task instructions>",
   "keywords": ["<8-20 terms: core concepts + synonyms + abbreviations + related terms>"],
   "search_queries": ["<2-4 Boolean query strings>"],
-  "inclusion_criteria": ["<must-haves — explicit or inferred from topic specificity>"],
-  "exclusion_criteria": ["<disqualifiers — explicit or inferred from topic focus>"],
+  "inclusion_criteria": ["<must-haves - explicit or inferred from topic specificity>"],
+  "exclusion_criteria": ["<disqualifiers - explicit or inferred from topic focus>"],
   "date_range": [start_year, end_year] or null,
-  "source_types": ["academic" | "grey" | "both"],
+  "source_types": ["academic" or "grey" or "both"],
   "max_results": <integer, default 500>
 }}
 
