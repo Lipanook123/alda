@@ -13,7 +13,7 @@ from backend.api.routes import mission, search, upload, export, themes, setup
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _config.load_persisted_llm_config()
+    _config.load_persisted_config()
     await init_db(settings.duckdb_path)
     yield
     close_db()
@@ -67,8 +67,8 @@ async def health():
             "openalex": True,
             "arxiv": True,
             "pubmed": True,
-            "google_cse": bool(settings.google_cse_id and settings.google_api_key),
-            "bing": bool(settings.bing_api_key),
+            "google_cse": bool(_config.get_google_cse_id() and _config.get_google_api_key()),
+            "bing": bool(_config.get_bing_api_key()),
             "duckduckgo": True,
         },
     )

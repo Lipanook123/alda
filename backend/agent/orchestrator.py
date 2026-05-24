@@ -191,8 +191,9 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
         abstracts = [src.abstract for src in unique_candidates if src.abstract][:20]
         extra_terms = iterative.expand_query(brief, abstracts) if abstracts else None
 
-        # Stop if we have enough results
-        if total_inserted >= brief.max_results:
+        # Stop if we have enough results (0 = unlimited, rely on saturation)
+        effective_limit = request.max_results if request.max_results is not None else brief.max_results
+        if effective_limit and total_inserted >= effective_limit:
             break
 
     else:

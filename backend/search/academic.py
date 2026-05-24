@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from backend.api.models import SourceIn, StructuredBrief
+from backend import config as _config
 from backend.config import settings
 from backend.search.translator import TARGET_LANGUAGES, build_translated_query
 
@@ -156,8 +157,9 @@ async def _search_semantic_scholar(
     client: httpx.AsyncClient, query: str, brief: StructuredBrief
 ) -> list[SourceIn]:
     headers = {}
-    if settings.semantic_scholar_api_key:
-        headers["x-api-key"] = settings.semantic_scholar_api_key
+    key = _config.get_semantic_scholar_key()
+    if key:
+        headers["x-api-key"] = key
 
     fields = "title,authors,year,externalIds,abstract,venue,citationCount"
     params = {
@@ -451,8 +453,9 @@ async def _search_core(
     client: httpx.AsyncClient, query: str, brief: StructuredBrief
 ) -> list[SourceIn]:
     headers: dict[str, str] = {}
-    if settings.core_api_key:
-        headers["Authorization"] = f"Bearer {settings.core_api_key}"
+    core_key = _config.get_core_key()
+    if core_key:
+        headers["Authorization"] = f"Bearer {core_key}"
 
     resp = await client.get(
         "https://api.core.ac.uk/v3/search/works",

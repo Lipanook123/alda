@@ -448,6 +448,7 @@ async function startSearch() {
       sources,
       use_llm_relevance: useLlm,
       max_token_budget: maxTokenBudget,
+      max_results: state.defaultMaxResults ?? null,
     });
     state.jobId = result.job_id;
     state.pollErrorCount = 0;
@@ -1131,9 +1132,179 @@ function closeSetup() {
 }
 
 // ──────────────────────────────────────────────
+// Settings modal
+// ──────────────────────────────────────────────
+
+// Tracks the currently selected max_results value (may differ from a preset)
+let _settingsMaxResults = 500;
+
+function loadSettings() {
+  const saved = localStorage.getItem("alda_max_results");
+  _settingsMaxResults = saved !== null ? parseInt(saved, 10) : 500;
+  state.defaultMaxResults = _settingsMaxResults;
+
+  const useLlm = localStorage.getItem("alda_use_llm_default");
+  if (useLlm !== null) {
+    const el = document.getElementById("use-llm");
+    if (el) el.checked = useLlm !== "false";
+  }
+
+  const budget = localStorage.getItem("alda_budget_default");
+  if (budget) {
+    const el = document.getElementById("token-budget-dollars");
+    if (el && !el.value) el.value = budget;
+  }
+}
+
+function openSettings() {
+  // Populate max results pill selection
+  _applyMaxResultsPills(_settingsMaxResults);
+
+  // Search behaviour checkboxes / inputs
+  const useLlmEl = document.getElementById("settings-use-llm");
+  if (useLlmEl) {
+    const saved = localStorage.getItem("alda_use_llm_default");
+    useLlmEl.checked = saved === null ? true : saved !== "false";
+  }
+  const budgetEl = document.getElementById("settings-budget");
+  if (budgetEl) budgetEl.value = localStorage.getItem("alda_budget_default") || "";
+
+  // AI status
+  const aiStatus = document.getElementById("settings-ai-status");
+  if (aiStatus) {
+    if (state.llmProvider && state.llmModel) {
+      aiStatus.innerHTML =
+        `<p class="settings-ai-configured">✓ ${esc(state.llmProvider)} / ${esc(state.llmModel)}</p>`;
+    } else {
+      aiStatus.innerHTML = `<p style="color:#888">Not configured — AI scoring is disabled.</p>`;
+    }
+  }
+
+  // Backend URL
+  const urlEl = document.getElementById("settings-backend-url");
+  if (urlEl) urlEl.value = localStorage.getItem("alda_backend_url") || "";
+
+  // Fetch which API keys are currently set on the server
+  api("GET", "/api/v1/setup/keys").then(data => {
+    _setKeyStatus("key-status-semantic", data.semantic_scholar);
+    _setKeyStatus("key-status-core", data.core);
+    _setKeyStatus("key-status-google", data.google_cse);
+    _setKeyStatus("key-status-bing", data.bing);
+  }).catch(() => {});
+
+  document.getElementById("settings-modal").classList.remove("hidden");
+}
+
+function closeSettings() {
+  document.getElementById("settings-modal").classList.add("hidden");
+}
+
+function selectMaxResults(val) {
+  _settingsMaxResults = val;
+  _applyMaxResultsPills(val);
+  // Clear custom input unless this was triggered by it
+  const custom = document.getElementById("settings-max-results-custom");
+  if (custom && val !== parseInt(custom.value, 10)) custom.value = "";
+}
+
+function selectMaxResultsCustom(raw) {
+  const val = parseInt(raw, 10);
+  if (!isNaN(val) && val >= 0) {
+    _settingsMaxResults = val;
+    // Deactivate all pills if custom doesn't match any preset
+    _applyMaxResultsPills(val);
+  }
+}
+
+function _applyMaxResultsPills(val) {
+  document.querySelectorAll(".results-opt").forEach(btn => {
+    btn.classList.toggle("active", parseInt(btn.dataset.val, 10) === val);
+  });
+}
+
+function _setKeyStatus(id, configured) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.textContent = configured ? "✓ configured" : "";
+    el.style.color = configured ? "var(--alda-success, #2d6a4f)" : "";
+  }
+}
+
+function saveSettings() {
+  localStorage.setItem("alda_max_results", String(_settingsMaxResults));
+  state.defaultMaxResults = _settingsMaxResults;
+
+  const useLlm = document.getElementById("settings-use-llm")?.checked ?? true;
+  localStorage.setItem("alda_use_llm_default", String(useLlm));
+  const useLlmMain = document.getElementById("use-llm");
+  if (useLlmMain) useLlmMain.checked = useLlm;
+
+  const budget = document.getElementById("settings-budget")?.value || "";
+  if (budget) {
+    localStorage.setItem("alda_budget_default", budget);
+    const budgetMain = document.getElementById("token-budget-dollars");
+    if (budgetMain && !budgetMain.value) budgetMain.value = budget;
+  } else {
+    localStorage.removeItem("alda_budget_default");
+  }
+
+  closeSettings();
+}
+
+async function saveApiKeys() {
+  const payload = {};
+  const semKey = document.getElementById("sk-semantic-scholar")?.value.trim();
+  const coreKey = document.getElementById("sk-core")?.value.trim();
+  const googleCseId = document.getElementById("sk-google-cse-id")?.value.trim();
+  const googleApiKey = document.getElementById("sk-google-api-key")?.value.trim();
+  const bingKey = document.getElementById("sk-bing")?.value.trim();
+
+  if (semKey) payload.semantic_scholar_api_key = semKey;
+  if (coreKey) payload.core_api_key = coreKey;
+  if (googleCseId) payload.google_cse_id = googleCseId;
+  if (googleApiKey) payload.google_api_key = googleApiKey;
+  if (bingKey) payload.bing_api_key = bingKey;
+
+  if (Object.keys(payload).length === 0) {
+    showStatus("settings-keys-status", "No keys entered.", "");
+    return;
+  }
+
+  const btn = document.getElementById("btn-save-keys");
+  btn.disabled = true;
+  try {
+    await api("POST", "/api/v1/setup/keys", payload);
+    showStatus("settings-keys-status", "Keys saved.", "success");
+    // Refresh key status indicators
+    const data = await api("GET", "/api/v1/setup/keys");
+    _setKeyStatus("key-status-semantic", data.semantic_scholar);
+    _setKeyStatus("key-status-core", data.core);
+    _setKeyStatus("key-status-google", data.google_cse);
+    _setKeyStatus("key-status-bing", data.bing);
+    // Clear entered values (security: don't leave keys in inputs)
+    ["sk-semantic-scholar","sk-core","sk-google-cse-id","sk-google-api-key","sk-bing"]
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+    // Refresh health (Google/Bing may now be enabled)
+    checkHealth();
+  } catch (e) {
+    showStatus("settings-keys-status", `Error: ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function saveBackendUrl() {
+  const url = document.getElementById("settings-backend-url")?.value.trim();
+  if (!url) return;
+  localStorage.setItem("alda_backend_url", url);
+  location.reload();
+}
+
+// ──────────────────────────────────────────────
 // Boot
 // ──────────────────────────────────────────────
 function init() {
+  loadSettings();
   initTabs();
   initSetupWizard();
   initMission();
@@ -1168,4 +1339,11 @@ Object.assign(window, {
   closeLogModal,
   copyLog,
   retryPoll,
+  openSettings,
+  closeSettings,
+  saveSettings,
+  saveApiKeys,
+  saveBackendUrl,
+  selectMaxResults,
+  selectMaxResultsCustom,
 });

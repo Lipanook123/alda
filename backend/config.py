@@ -33,8 +33,54 @@ def is_llm_configured() -> bool:
     return bool(get_llm_provider() and get_llm_model())
 
 
-def load_persisted_llm_config() -> None:
-    """Called at startup — loads LLM credentials saved by the setup wizard."""
+# ── Runtime-applied source API keys ─────────────────────────────────────────
+# Set by POST /api/v1/setup/keys. Checked before env-var settings.
+_runtime_keys: dict[str, str] = {}
+
+
+def apply_runtime_keys(
+    semantic_scholar_api_key: str | None = None,
+    core_api_key: str | None = None,
+    google_cse_id: str | None = None,
+    google_api_key: str | None = None,
+    bing_api_key: str | None = None,
+) -> None:
+    global _runtime_keys
+    updates = {
+        k: v for k, v in {
+            "semantic_scholar_api_key": semantic_scholar_api_key,
+            "core_api_key": core_api_key,
+            "google_cse_id": google_cse_id,
+            "google_api_key": google_api_key,
+            "bing_api_key": bing_api_key,
+        }.items()
+        if v is not None
+    }
+    _runtime_keys.update(updates)
+
+
+def get_semantic_scholar_key() -> str | None:
+    return _runtime_keys.get("semantic_scholar_api_key") or settings.semantic_scholar_api_key
+
+
+def get_core_key() -> str | None:
+    return _runtime_keys.get("core_api_key") or settings.core_api_key
+
+
+def get_google_cse_id() -> str | None:
+    return _runtime_keys.get("google_cse_id") or settings.google_cse_id
+
+
+def get_google_api_key() -> str | None:
+    return _runtime_keys.get("google_api_key") or settings.google_api_key
+
+
+def get_bing_api_key() -> str | None:
+    return _runtime_keys.get("bing_api_key") or settings.bing_api_key
+
+
+def load_persisted_config() -> None:
+    """Called at startup — loads LLM credentials and API keys saved by the setup wizards."""
     config_file = settings.data_dir / "alda_config.json"
     if not config_file.exists():
         return
@@ -45,8 +91,20 @@ def load_persisted_llm_config() -> None:
         if provider and model:
             apply_runtime_llm(provider, data.get("llm_api_key", ""), model)
             log.info("Loaded persisted LLM config: %s/%s", provider, model)
+        # Load source API keys
+        apply_runtime_keys(
+            semantic_scholar_api_key=data.get("semantic_scholar_api_key") or None,
+            core_api_key=data.get("core_api_key") or None,
+            google_cse_id=data.get("google_cse_id") or None,
+            google_api_key=data.get("google_api_key") or None,
+            bing_api_key=data.get("bing_api_key") or None,
+        )
     except Exception as e:
-        log.warning("Could not load persisted LLM config: %s", e)
+        log.warning("Could not load persisted config: %s", e)
+
+
+# Keep the old name as an alias for backward compatibility
+load_persisted_llm_config = load_persisted_config
 
 
 class Settings(BaseSettings):

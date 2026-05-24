@@ -10,6 +10,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from backend.api.models import SourceIn, StructuredBrief
+from backend import config as _config
 from backend.config import settings
 from backend.search.classifier import classify_url
 
@@ -35,9 +36,9 @@ async def search(
     tasks: dict[str, asyncio.Task] = {}
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        if "google_cse" in enabled_sources and settings.google_cse_id and settings.google_api_key:
+        if "google_cse" in enabled_sources and _config.get_google_cse_id() and _config.get_google_api_key():
             tasks["google_cse"] = asyncio.create_task(_search_google_cse(client, query))
-        if "bing" in enabled_sources and settings.bing_api_key:
+        if "bing" in enabled_sources and _config.get_bing_api_key():
             tasks["bing"] = asyncio.create_task(_search_bing(client, query))
         if "duckduckgo" in enabled_sources:
             tasks["duckduckgo"] = asyncio.create_task(
@@ -65,8 +66,8 @@ async def _search_google_cse(client: httpx.AsyncClient, query: str) -> list[Sour
     for start in range(1, 91, 10):  # pages 1-10, 10 results each
         params = {
             "q": query,
-            "cx": settings.google_cse_id,
-            "key": settings.google_api_key,
+            "cx": _config.get_google_cse_id(),
+            "key": _config.get_google_api_key(),
             "num": 10,
             "start": start,
         }
@@ -109,7 +110,7 @@ async def _search_bing(client: httpx.AsyncClient, query: str) -> list[SourceIn]:
             resp = await client.get(
                 "https://api.bing.microsoft.com/v7.0/search",
                 params={"q": query, "count": 50, "offset": offset},
-                headers={"Ocp-Apim-Subscription-Key": settings.bing_api_key},
+                headers={"Ocp-Apim-Subscription-Key": _config.get_bing_api_key()},
             )
             resp.raise_for_status()
             data = resp.json()

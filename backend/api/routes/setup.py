@@ -1,4 +1,4 @@
-"""First-run setup wizard endpoint: configure LLM credentials from the browser."""
+"""First-run setup wizard endpoints: configure LLM credentials and source API keys."""
 import json
 import logging
 
@@ -10,6 +10,36 @@ from backend import config as _config
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["setup"])
 
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _persist_config() -> None:
+    """Write runtime LLM + key config to alda_config.json for restart persistence."""
+    config_file = _config.settings.data_dir / "alda_config.json"
+    try:
+        _config.settings.data_dir.mkdir(parents=True, exist_ok=True)
+        existing: dict = {}
+        if config_file.exists():
+            try:
+                existing = json.loads(config_file.read_text())
+            except Exception:
+                pass
+        existing.update({
+            "llm_provider": _config.get_llm_provider() or "",
+            "llm_api_key": _config.get_llm_api_key() or "",
+            "llm_model": _config.get_llm_model() or "",
+            "semantic_scholar_api_key": _config.get_semantic_scholar_key() or "",
+            "core_api_key": _config.get_core_key() or "",
+            "google_cse_id": _config.get_google_cse_id() or "",
+            "google_api_key": _config.get_google_api_key() or "",
+            "bing_api_key": _config.get_bing_api_key() or "",
+        })
+        config_file.write_text(json.dumps(existing))
+    except Exception as e:
+        log.warning("Could not persist config to disk: %s", e)
+
+
+# ── LLM setup ────────────────────────────────────────────────────────────────
 
 class LLMSetupRequest(BaseModel):
     provider: str
@@ -37,7 +67,6 @@ async def configure_llm(req: LLMSetupRequest):
         )
     except Exception as e:
         err = str(e)
-        # Surface the useful part of litellm error messages
         if "AuthenticationError" in err or "401" in err:
             msg = "Authentication failed — please check your API key and try again."
         elif "NotFoundError" in err or "404" in err:
@@ -48,21 +77,8 @@ async def configure_llm(req: LLMSetupRequest):
             msg = f"Connection failed: {err[:250]}"
         return LLMSetupResponse(success=False, message=msg)
 
-    # Persist to the data directory so the config survives restarts
-    config_file = _config.settings.data_dir / "alda_config.json"
-    try:
-        _config.settings.data_dir.mkdir(parents=True, exist_ok=True)
-        config_file.write_text(
-            json.dumps({
-                "llm_provider": req.provider,
-                "llm_api_key": req.api_key,
-                "llm_model": req.model,
-            })
-        )
-    except Exception as e:
-        log.warning("Could not persist LLM config to disk: %s", e)
-
     _config.apply_runtime_llm(req.provider, req.api_key, req.model)
+    _persist_config()
     log.info("LLM configured via setup wizard: %s/%s", req.provider, req.model)
     return LLMSetupResponse(success=True, message="AI scoring is now active.")
 
@@ -70,3 +86,35 @@ async def configure_llm(req: LLMSetupRequest):
 @router.get("/setup/llm/status")
 async def llm_setup_status():
     return {"configured": _config.is_llm_configured()}
+
+
+# ── Source API keys setup ─────────────────────────────────────────────────────
+
+class KeysSetupRequest(BaseModel):
+    semantic_scholar_api_key: str | None = None
+    core_api_key: str | None = None
+    google_cse_id: str | None = None
+    google_api_key: str | None = None
+    bing_api_key: str | None = None
+
+
+@router.post("/setup/keys")
+async def setup_keys(req: KeysSetupRequest):
+    """Save source API keys at runtime — no server restart required."""
+    _config.apply_runtime_keys(**{
+        k: v for k, v in req.model_dump().items() if v is not None
+    })
+    _persist_config()
+    log.info("Source API keys updated via settings")
+    return {"success": True, "message": "API keys updated."}
+
+
+@router.get("/setup/keys")
+async def get_keys():
+    """Return which source keys are configured (values redacted)."""
+    return {
+        "semantic_scholar": bool(_config.get_semantic_scholar_key()),
+        "core": bool(_config.get_core_key()),
+        "google_cse": bool(_config.get_google_cse_id() and _config.get_google_api_key()),
+        "bing": bool(_config.get_bing_api_key()),
+    }
