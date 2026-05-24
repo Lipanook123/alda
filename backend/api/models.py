@@ -46,7 +46,6 @@ class StructuredBrief(BaseModel):
     date_range: tuple[int, int] | None = None
     source_types: list[str] = ["both"]
     max_results: int = 500
-    parsed_with_llm: bool = False    # False = heuristic fallback, True = LLM-parsed
     raw_text: str
 
 
