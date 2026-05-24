@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from backend.api.models import SearchJobRequest, SearchJobStatus, SearchProgress, StructuredBrief
+from backend import config as _config
 from backend.config import settings
 from backend.db import database
 from backend.search import academic, grey
@@ -91,6 +92,7 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
     extra_terms: list[str] | None = None
     total_inserted = 0
     total_duplicates = 0
+    tokens_total = 0
     max_iterations = 5
 
     for iteration in range(1, max_iterations + 1):
@@ -116,9 +118,21 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
         unique_candidates, dup_count = deduplicate(candidates, existing_dois, existing_titles)
         total_duplicates += dup_count
 
-        # Relevance scoring (LLM if configured)
-        if request.use_llm_relevance and settings.llm_configured and unique_candidates:
-            unique_candidates = summarizer.score_relevance(unique_candidates, brief)
+        # Relevance scoring (LLM if configured, budget permitting)
+        if request.use_llm_relevance and _config.is_llm_configured() and unique_candidates:
+            budget_ok = (
+                request.max_token_budget is None
+                or tokens_total < request.max_token_budget
+            )
+            if budget_ok:
+                unique_candidates, batch_tokens = summarizer.score_relevance(unique_candidates, brief)
+                tokens_total += batch_tokens
+                job.progress.tokens_used = tokens_total
+            else:
+                log.info(
+                    "Token budget %d reached (%d used) — skipping LLM scoring",
+                    request.max_token_budget, tokens_total,
+                )
 
         # Insert into DB
         inserted_this_iter = 0
@@ -174,4 +188,5 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
     async with database.get_conn() as conn:
         database.update_query_status(conn, query_id, job.status, results_count=total_inserted)
 
-    log.info("Job %s finished with status=%s, total=%d", job_id, job.status, total_inserted)
+    log.info("Job %s finished with status=%s, total=%d, tokens=%d",
+             job.job_id, job.status, total_inserted, tokens_total)

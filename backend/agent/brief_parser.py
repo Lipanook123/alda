@@ -2,7 +2,7 @@ import json
 import re
 
 from backend.api.models import StructuredBrief
-from backend.config import settings
+from backend import config as _config
 
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -35,7 +35,7 @@ Return only the JSON object, no explanation."""
 
 
 def parse(text: str) -> StructuredBrief:
-    if settings.llm_configured:
+    if _config.is_llm_configured():
         try:
             return _parse_with_llm(text)
         except Exception:
@@ -47,9 +47,9 @@ def _parse_with_llm(text: str) -> StructuredBrief:
     import litellm  # noqa: PLC0415
 
     response = litellm.completion(
-        model=f"{settings.llm_provider}/{settings.llm_model}",
+        model=f"{_config.get_llm_provider()}/{_config.get_llm_model()}",
         messages=[{"role": "user", "content": _LLM_PROMPT.format(text=text)}],
-        api_key=settings.llm_api_key,
+        api_key=_config.get_llm_api_key() or None,
         max_tokens=1000,
     )
     content = response.choices[0].message.content

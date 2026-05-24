@@ -1,6 +1,52 @@
+import json
+import logging
 from pathlib import Path
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+log = logging.getLogger(__name__)
+
+# ── Runtime-applied LLM config ──────────────────────────────────────────────
+# Set by POST /api/v1/setup/llm. Checked before env-var settings so the
+# user can configure the key from the browser on first run.
+_runtime_llm: dict[str, str] = {}
+
+
+def apply_runtime_llm(provider: str, api_key: str, model: str) -> None:
+    global _runtime_llm
+    _runtime_llm = {"provider": provider, "api_key": api_key, "model": model}
+
+
+def get_llm_provider() -> str | None:
+    return _runtime_llm.get("provider") or settings.llm_provider
+
+
+def get_llm_api_key() -> str | None:
+    return _runtime_llm.get("api_key") or settings.llm_api_key
+
+
+def get_llm_model() -> str | None:
+    return _runtime_llm.get("model") or settings.llm_model
+
+
+def is_llm_configured() -> bool:
+    return bool(get_llm_provider() and get_llm_model())
+
+
+def load_persisted_llm_config() -> None:
+    """Called at startup — loads LLM credentials saved by the setup wizard."""
+    config_file = settings.data_dir / "alda_config.json"
+    if not config_file.exists():
+        return
+    try:
+        data = json.loads(config_file.read_text())
+        provider = data.get("llm_provider", "")
+        model = data.get("llm_model", "")
+        if provider and model:
+            apply_runtime_llm(provider, data.get("llm_api_key", ""), model)
+            log.info("Loaded persisted LLM config: %s/%s", provider, model)
+    except Exception as e:
+        log.warning("Could not load persisted LLM config: %s", e)
 
 
 class Settings(BaseSettings):

@@ -4,14 +4,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from backend import config as _config
 from backend.config import settings
 from backend.db.database import close_db, init_db
 from backend.api.models import HealthStatus
-from backend.api.routes import mission, search, upload, export, themes
+from backend.api.routes import mission, search, upload, export, themes, setup
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _config.load_persisted_llm_config()
     await init_db(settings.duckdb_path)
     yield
     close_db()
@@ -37,6 +39,12 @@ app.include_router(search.router, prefix="/api/v1")
 app.include_router(upload.router, prefix="/api/v1")
 app.include_router(export.router, prefix="/api/v1")
 app.include_router(themes.router, prefix="/api/v1")
+app.include_router(setup.router, prefix="/api/v1")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/", include_in_schema=False)
@@ -49,7 +57,9 @@ async def health():
     return HealthStatus(
         status="ok",
         db="connected",
-        llm_configured=settings.llm_configured,
+        llm_configured=_config.is_llm_configured(),
+        llm_provider=_config.get_llm_provider(),
+        llm_model=_config.get_llm_model(),
         scraping_enabled=settings.scraping_enabled,
         available_sources={
             "semantic_scholar": True,
