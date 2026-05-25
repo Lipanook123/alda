@@ -235,7 +235,7 @@ async function checkHealth() {
       h.db === "connected" ? "Database connected" : `Database error: ${h.db}`);
     setDot("dot-llm",
       h.llm_configured ? "green" : "grey",
-      h.llm_configured ? "AI scoring active" : "AI scoring not configured (optional)");
+      h.llm_configured ? "Language model active" : "Language model not configured — required for parsing");
     setDot("dot-scraping",
       h.scraping_enabled ? "green" : "grey",
       h.scraping_enabled ? "Web scraping enabled" : "Web scraping disabled");
@@ -263,7 +263,8 @@ async function checkHealth() {
     if (!h.llm_configured) {
       showSetupIfNeeded();
     } else {
-      // Clear skip flag — user has LLM configured now
+      // Mark setup complete so wizard doesn't reappear (covers env-var configuration)
+      localStorage.setItem("alda_setup_done", "true");
       localStorage.removeItem("alda_setup_skipped");
       updateTokenEstimate();
     }
@@ -317,9 +318,9 @@ async function parseMission() {
     if (e.message === "llm_not_configured") {
       document.getElementById("parse-status").innerHTML =
         `<span class="status-msg error">
-           AI is required to parse research briefs.
+           A language model is required to parse research briefs.
            <button class="secondary" style="margin-left:0.5rem" onclick="openSetupWizard()">
-             Set up AI now →
+             Set up language model →
            </button>
          </span>`;
     } else {
@@ -413,12 +414,12 @@ function updateTokenEstimate() {
     const cost = (totalIn / 1000 * pricing[0]) + (totalOut / 1000 * pricing[1]);
     const costStr = cost < 0.01 ? "<$0.01" : `~$${cost.toFixed(2)}`;
     textEl.innerHTML =
-      `<strong>Estimated AI scoring cost:</strong> ${costStr} ` +
+      `<strong>Estimated language model scoring cost:</strong> ${costStr} ` +
       `<span class="muted">(~${(totalTokens / 1000).toFixed(0)}k tokens for up to ${n} sources ` +
       `using ${esc(state.llmModel)})</span>`;
   } else {
     textEl.innerHTML =
-      `<strong>AI scoring:</strong> ~${(totalTokens / 1000).toFixed(0)}k tokens estimated ` +
+      `<strong>Language model scoring:</strong> ~${(totalTokens / 1000).toFixed(0)}k tokens estimated ` +
       `for up to ${n} sources <span class="muted">(pricing not available for ${esc(state.llmModel)})</span>`;
   }
   el.classList.remove("hidden");
@@ -574,9 +575,9 @@ function updateProgress(job) {
     const pricing = TOKEN_PRICING[key];
     if (pricing) {
       const cost = (p.tokens_used / 1000) * ((pricing[0] + pricing[1]) / 2);
-      tokenNote = ` · AI scoring: ${p.tokens_used.toLocaleString()} tokens (~$${cost < 0.01 ? "<0.01" : cost.toFixed(2)})`;
+      tokenNote = ` · Language model scoring: ${p.tokens_used.toLocaleString()} tokens (~$${cost < 0.01 ? "<0.01" : cost.toFixed(2)})`;
     } else {
-      tokenNote = ` · AI scoring: ${p.tokens_used.toLocaleString()} tokens used`;
+      tokenNote = ` · Language model scoring: ${p.tokens_used.toLocaleString()} tokens used`;
     }
   }
 
@@ -989,7 +990,7 @@ const PROVIDERS_CONFIG = {
   },
   mistral: {
     name: "Mistral AI",
-    description: "European AI. Good balance of cost and capability.",
+    description: "European language model provider. Good balance of cost and capability.",
     keyUrl: "https://console.mistral.ai/api-keys/",
     keyHint: "A long alphanumeric string",
     models: ["mistral-small-latest", "mistral-medium-latest", "open-mistral-7b"],
@@ -1002,7 +1003,7 @@ const PROVIDERS_CONFIG = {
   },
   gemini: {
     name: "Google Gemini",
-    description: "Google's AI. Has a free tier.",
+    description: "Google's language model. Has a free tier.",
     keyUrl: "https://aistudio.google.com/app/apikey",
     keyHint: "Starts with AIza",
     models: ["gemini-1.5-flash", "gemini-1.5-pro"],
@@ -1015,7 +1016,7 @@ const PROVIDERS_CONFIG = {
   },
   deepseek: {
     name: "DeepSeek",
-    description: "Very affordable Chinese AI. DeepSeek-chat is excellent value.",
+    description: "Very affordable. DeepSeek-chat is excellent value.",
     keyUrl: "https://platform.deepseek.com/api_keys",
     keyHint: "Starts with sk-",
     models: ["deepseek-chat", "deepseek-reasoner"],
@@ -1140,11 +1141,6 @@ async function setupTestAndSave() {
   }
 }
 
-function setupSkip() {
-  localStorage.setItem("alda_setup_skipped", "true");
-  closeSetup();
-}
-
 function closeSetup() {
   document.getElementById("setup-modal").classList.add("hidden");
   checkHealth(); // refresh dots and token estimate to reflect new LLM state
@@ -1195,7 +1191,7 @@ function openSettings() {
       aiStatus.innerHTML =
         `<p class="settings-ai-configured">✓ ${esc(state.llmProvider)} / ${esc(state.llmModel)}</p>`;
     } else {
-      aiStatus.innerHTML = `<p style="color:#888">Not configured — AI scoring is disabled.</p>`;
+      aiStatus.innerHTML = `<p style="color:#888">Not configured — language model is required for parsing.</p>`;
     }
   }
 
@@ -1343,7 +1339,6 @@ document.addEventListener("DOMContentLoaded", init);
 Object.assign(window, {
   switchTab,
   setupGoTo,
-  setupSkip,
   closeSetup,
   selectProvider,
   openSetupWizard,

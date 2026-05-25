@@ -17,7 +17,7 @@ async def parse_mission(body: MissionBriefIn) -> MissionBriefOut:
     except brief_parser.LLMNotConfiguredError:
         raise HTTPException(status_code=503, detail="llm_not_configured")
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"AI parsing failed: {e}")
+        raise HTTPException(status_code=422, detail=f"Language model parsing failed: {e}")
 
     query_id = str(uuid.uuid4())
     async with database.get_conn() as conn:

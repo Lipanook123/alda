@@ -69,7 +69,7 @@ Research query:
 def parse(text: str) -> StructuredBrief:
     if not _config.is_llm_configured():
         raise LLMNotConfiguredError(
-            "No AI provider configured. Please set up an AI provider to parse research briefs."
+            "No language model configured. Please set up a language model provider to parse research briefs."
         )
     return _parse_with_llm(text)
 

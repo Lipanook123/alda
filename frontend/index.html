@@ -15,23 +15,21 @@
 
     <!-- Step 0: Welcome -->
     <div id="setup-step-0" class="setup-step">
-      <h2 id="setup-modal-title">Before you start — set up AI scoring</h2>
-      <p>ALDA uses AI to do two things:</p>
+      <h2 id="setup-modal-title">Before you start — set up your language model</h2>
+      <p>ALDA uses a language model to do two things:</p>
       <ul>
-        <li><strong>Understand your research question</strong> — extracting keywords, date ranges, and criteria automatically</li>
+        <li><strong>Understand your research question</strong> — extracting keywords, date ranges, and criteria automatically. <em>This is required — ALDA cannot parse your question without it.</em></li>
         <li><strong>Score each result for relevance</strong> — so the most useful sources appear first</li>
       </ul>
-      <p>This requires a free API key from an AI provider. Setup takes about 2 minutes.</p>
+      <p>This requires an API key from a language model provider. Setup takes about 2 minutes.</p>
       <div class="btn-row" style="margin-top:1.5rem;flex-wrap:wrap">
-        <button class="primary" onclick="setupGoTo(1)">Set up AI now →</button>
-        <button class="secondary outline" onclick="setupSkip()">Skip for now</button>
+        <button class="primary" onclick="setupGoTo(1)">Set up language model →</button>
       </div>
-      <p class="field-help" style="margin-top:1rem">Without AI, ALDA still searches and returns results — but won’t score them for relevance and will use basic keyword extraction for your brief.</p>
     </div>
 
     <!-- Step 1: Choose provider -->
     <div id="setup-step-1" class="setup-step hidden">
-      <h3>Choose your AI provider</h3>
+      <h3>Choose your language model provider</h3>
       <p class="field-help">All options work with ALDA. OpenAI and Mistral are popular starting points.</p>
       <div class="provider-grid" id="provider-grid">
         <!-- Filled by JS -->
@@ -75,8 +73,8 @@
     <div id="setup-step-4" class="setup-step hidden">
       <div style="text-align:center;padding:1rem 0">
         <div style="font-size:3rem;margin-bottom:1rem">✅</div>
-        <h2>AI scoring is ready!</h2>
-        <p>ALDA will now understand your research question more accurately and score each result for relevance.</p>
+        <h2>Language model is ready!</h2>
+        <p>ALDA will now parse your research question and score each result for relevance.</p>
         <button class="primary" onclick="closeSetup()" style="margin-top:1rem">Start your research →</button>
       </div>
     </div>
@@ -98,7 +96,7 @@
         </span>
         <span class="status-indicator">
           <span class="status-dot" id="dot-llm" title="Checking…"></span>
-          <span class="status-label" id="label-llm">AI scoring</span>
+          <span class="status-label" id="label-llm">Language model</span>
         </span>
         <span class="status-indicator">
           <span class="status-dot" id="dot-scraping" title="Checking…"></span>
@@ -154,22 +152,22 @@
       <div class="settings-field">
         <label>
           <input type="checkbox" id="settings-use-llm" />
-          Score results for relevance using AI (on by default)
+          Score results for relevance using language model (on by default)
         </label>
       </div>
       <div class="settings-field">
         <label>Default spending limit per search (USD)
           <input type="number" id="settings-budget" min="0" step="0.10" placeholder="No limit" style="width:120px" />
         </label>
-        <p class="field-help">Leave blank for no limit. Applies when AI scoring is enabled.</p>
+        <p class="field-help">Leave blank for no limit. Applies when language model scoring is enabled.</p>
       </div>
     </section>
 
-    <!-- AI provider -->
+    <!-- Language model provider -->
     <section class="settings-section">
-      <h4>AI provider</h4>
+      <h4>Language model provider</h4>
       <div id="settings-ai-status" class="settings-ai-status"></div>
-      <button class="secondary" onclick="closeSettings(); openSetupWizard();">Change AI settings →</button>
+      <button class="secondary" onclick="closeSettings(); openSetupWizard();">Change language model settings →</button>
     </section>
 
     <!-- Source API keys -->
@@ -324,7 +322,7 @@
                      placeholder="no limit" />
             </span>
           </label>
-          <small class="field-help">ALDA stops AI scoring when your limit is reached — all sources are still returned.</small>
+          <small class="field-help">ALDA stops language model scoring when your limit is reached — all sources are still returned.</small>
         </div>
       </div>
 
@@ -386,12 +384,12 @@
             <label><input type="checkbox" name="source" value="duckduckgo" checked /> DuckDuckGo (free)</label>
           </fieldset>
           <fieldset>
-            <legend>AI relevance scoring</legend>
+            <legend>Language model relevance scoring</legend>
             <label>
               <input type="checkbox" id="use-llm" checked />
-              Score each result for relevance using AI
+              Score each result for relevance using language model
             </label>
-            <p class="field-help">Requires an AI API key configured on the server. If not set up, this option is safely ignored and all results are still returned.</p>
+            <p class="field-help">Requires a language model API key configured on the server. If not set up, this option is safely ignored and all results are still returned.</p>
           </fieldset>
         </div>
       </details>
@@ -547,7 +545,7 @@ https://example.org/paper1,My Paper Title,Smith J; Jones A,2022</code></pre>
 <footer class="container-fluid">
   <small>
     ALDA v0.1.0 — <a href="https://github.com/lipanook123/alda" target="_blank">Open source (AGPLv3)</a> —
-    <a href="#" onclick="openSetupWizard(); return false;">AI API key setup</a>
+    <a href="#" onclick="openSetupWizard(); return false;">Language model setup</a>
   </small>
 </footer>
 

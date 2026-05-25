@@ -566,3 +566,56 @@ footer a { color: #888; }
   font-size: 0.88rem;
   line-height: 1.5;
 }
+
+/* ── Prevent horizontal overflow on all screens ──────────────────────── */
+body { overflow-x: hidden; }
+
+/* ── Mobile: tablet and phone (≤767px) ──────────────────────────────── */
+@media (max-width: 767px) {
+  /* Header: hide subtitle and status text labels, keep coloured dots */
+  .alda-sub { display: none; }
+  .status-label { display: none; }
+  .system-status { gap: 0.6rem; }
+
+  /* Guided banner: stack step indicator above message */
+  .guided-banner { flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+  #guided-step-indicator { align-self: flex-start; }
+
+  /* Tab buttons: tighter, touch-friendly */
+  .tab-btn { padding: 0.6rem 0.75rem; font-size: 0.82rem; min-height: 44px; }
+
+  /* Modals: full width, reduced padding */
+  .modal-box { padding: 1.5rem; }
+  .settings-modal-box { width: 100%; }
+  .log-modal-box { width: 100%; }
+  .log-content { max-height: 45vh; }
+
+  /* Token budget row: stack vertically */
+  .token-budget-row { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+
+  /* Mission tab grid: single column */
+  #tab-mission .grid { grid-template-columns: 1fr !important; }
+  #brief-preview { margin-top: 1rem; }
+
+  /* Result meta: allow wrapping */
+  .result-meta { white-space: normal; }
+}
+
+/* ── Small phones (≤479px) ───────────────────────────────────────────── */
+@media (max-width: 479px) {
+  /* Hide GitHub link in header (last <li> in right nav list) */
+  .alda-header nav ul:last-child > li:last-child { display: none; }
+
+  /* Further reduce modal padding */
+  .modal-box { padding: 1.1rem; }
+
+  /* Provider grid: single column */
+  .provider-grid { grid-template-columns: 1fr; }
+
+  /* Large CTA button: full width */
+  .btn-large { width: 100%; }
+
+  /* Parse Brief button row: stack and stretch */
+  #tab-mission .btn-row { flex-direction: column; align-items: stretch; }
+  #tab-mission .btn-row button { width: 100%; }
+}
