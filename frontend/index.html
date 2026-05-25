@@ -1,556 +1,591 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ALDA — Literature Search</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
-  <link rel="stylesheet" href="css/style.css" />
+  <title>ALDA — Autonomous Literature Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Alice&family=Raleway:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css?v=2" />
 </head>
 <body>
 
-<!-- ====== SETUP WIZARD MODAL ====== -->
-<div id="setup-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="setup-modal-title">
-  <div class="modal-box">
+<!-- ====== GATE: BACKEND CONNECTION ====== -->
+<div id="gate-backend" class="alda-gate hidden" role="main" aria-label="Server connection setup">
+  <div class="alda-gate-card">
+    <span class="alda-gate-logo">ALDA</span>
+    <p class="alda-gate-tagline">Autonomous Literature Search</p>
+    <h2>Connect to server</h2>
+    <p>ALDA needs to know where its server is running.</p>
+    <div class="settings-field" style="margin-top:1.5rem">
+      <label for="gate-backend-url">Server URL</label>
+      <input type="url" id="gate-backend-url" placeholder="https://your-alda-server.onrender.com" autocomplete="off" />
+      <p class="alda-field-help">This is the URL of your ALDA backend. For local development, use <code>http://localhost:8000</code>.</p>
+    </div>
+    <div class="alda-btn-row" style="margin-top:1.5rem">
+      <button id="btn-gate-backend-connect" class="alda-btn alda-btn-primary">Connect →</button>
+      <span id="gate-backend-status" class="alda-status-msg"></span>
+    </div>
+  </div>
+</div>
 
-    <!-- Step 0: Welcome -->
-    <div id="setup-step-0" class="setup-step">
-      <h2 id="setup-modal-title">Before you start — set up AI scoring</h2>
-      <p>ALDA uses AI to do two things:</p>
+<!-- ====== GATE: LANGUAGE MODEL SETUP ====== -->
+<div id="gate-lm" class="alda-gate hidden" role="main" aria-label="Language model setup">
+  <div class="alda-gate-card">
+    <span class="alda-gate-logo">ALDA</span>
+    <p class="alda-gate-tagline">Autonomous Literature Search</p>
+
+    <!-- Sub-step 0: Welcome -->
+    <div id="gate-lm-0" class="alda-gate-step">
+      <div class="alda-gate-step-nav">
+        <span class="alda-gate-step-pip active"></span>
+        <span class="alda-gate-step-pip"></span>
+        <span class="alda-gate-step-pip"></span>
+      </div>
+      <h2>Language model required</h2>
+      <p>ALDA uses a language model to do two things:</p>
       <ul>
         <li><strong>Understand your research question</strong> — extracting keywords, date ranges, and criteria automatically</li>
         <li><strong>Score each result for relevance</strong> — so the most useful sources appear first</li>
       </ul>
-      <p>This requires a free API key from an AI provider. Setup takes about 2 minutes.</p>
-      <div class="btn-row" style="margin-top:1.5rem;flex-wrap:wrap">
-        <button class="primary" onclick="setupGoTo(1)">Set up AI now →</button>
-        <button class="secondary outline" onclick="setupSkip()">Skip for now</button>
-      </div>
-      <p class="field-help" style="margin-top:1rem">Without AI, ALDA still searches and returns results — but won’t score them for relevance and will use basic keyword extraction for your brief.</p>
-    </div>
-
-    <!-- Step 1: Choose provider -->
-    <div id="setup-step-1" class="setup-step hidden">
-      <h3>Choose your AI provider</h3>
-      <p class="field-help">All options work with ALDA. OpenAI and Mistral are popular starting points.</p>
-      <div class="provider-grid" id="provider-grid">
-        <!-- Filled by JS -->
-      </div>
-      <div style="margin-top:1rem">
-        <button class="secondary" onclick="setupGoTo(0)">← Back</button>
+      <p>You need an API key from a language model provider. Setup takes about 2 minutes. Your key is stored locally in your browser.</p>
+      <div class="alda-btn-row" style="margin-top:1.5rem">
+        <button class="alda-btn alda-btn-primary" onclick="gateLmGoTo(1)">Get started →</button>
+        <button id="btn-gate-lm-cancel" class="alda-btn alda-btn-secondary hidden" onclick="cancelLmGate()">Cancel</button>
       </div>
     </div>
 
-    <!-- Step 2: Get API key instructions -->
-    <div id="setup-step-2" class="setup-step hidden">
-      <h3>Get your API key</h3>
-      <div id="provider-instructions"></div>
-      <div class="btn-row" style="margin-top:1.5rem">
-        <button class="primary" onclick="setupGoTo(3)">I have my key →</button>
-        <button class="secondary" onclick="setupGoTo(1)">← Change provider</button>
+    <!-- Sub-step 1: Choose provider -->
+    <div id="gate-lm-1" class="alda-gate-step hidden">
+      <div class="alda-gate-step-nav">
+        <span class="alda-gate-step-pip done"></span>
+        <span class="alda-gate-step-pip active"></span>
+        <span class="alda-gate-step-pip"></span>
+      </div>
+      <h2>Choose your provider</h2>
+      <p class="alda-field-help">All options work with ALDA. OpenAI and Mistral are popular starting points.</p>
+      <div class="provider-grid" id="gate-provider-grid">
+        <!-- Populated by JS -->
+      </div>
+      <div class="alda-btn-row" style="margin-top:1rem">
+        <button class="alda-btn alda-btn-secondary" onclick="gateLmGoTo(0)">← Back</button>
       </div>
     </div>
 
-    <!-- Step 3: Enter key + model -->
-    <div id="setup-step-3" class="setup-step hidden">
-      <h3>Enter your credentials</h3>
-      <label>
-        API key
-        <input type="password" id="setup-api-key" placeholder="Paste your key here" autocomplete="off" />
-        <small id="setup-key-hint" class="field-help"></small>
-      </label>
-      <label style="margin-top:1rem;display:block">
-        Model
-        <select id="setup-model" style="width:100%"></select>
-        <small class="field-help">Not sure? Leave the default — it’s a good starting choice.</small>
-      </label>
-      <div class="btn-row" style="margin-top:1.5rem">
-        <button class="primary" id="btn-setup-test">Test &amp; save →</button>
-        <button class="secondary" id="btn-setup-back-3" onclick="setupGoTo(2)">← Back</button>
+    <!-- Sub-step 2: Enter API key -->
+    <div id="gate-lm-2" class="alda-gate-step hidden">
+      <div class="alda-gate-step-nav">
+        <span class="alda-gate-step-pip done"></span>
+        <span class="alda-gate-step-pip done"></span>
+        <span class="alda-gate-step-pip active"></span>
       </div>
-      <div id="setup-test-status" style="margin-top:1rem"></div>
-    </div>
-
-    <!-- Step 4: Success -->
-    <div id="setup-step-4" class="setup-step hidden">
-      <div style="text-align:center;padding:1rem 0">
-        <div style="font-size:3rem;margin-bottom:1rem">✅</div>
-        <h2>AI scoring is ready!</h2>
-        <p>ALDA will now understand your research question more accurately and score each result for relevance.</p>
-        <button class="primary" onclick="closeSetup()" style="margin-top:1rem">Start your research →</button>
+      <h2>Enter your API key</h2>
+      <div id="gate-provider-instructions" style="margin-bottom:1.25rem"></div>
+      <div class="settings-field">
+        <label for="gate-api-key">API key</label>
+        <input type="password" id="gate-api-key" placeholder="Paste your key here" autocomplete="off" />
+        <p class="alda-field-help" id="gate-key-hint"></p>
       </div>
+      <div class="settings-field" style="margin-top:0.75rem">
+        <label for="gate-model">Model</label>
+        <select id="gate-model"></select>
+        <p class="alda-field-help">Not sure? Leave the default — it's a good starting choice.</p>
+      </div>
+      <div class="alda-btn-row" style="margin-top:1.5rem">
+        <button id="btn-gate-lm-test" class="alda-btn alda-btn-primary">Test &amp; connect →</button>
+        <button class="alda-btn alda-btn-secondary" onclick="gateLmGoTo(1)">← Change provider</button>
+      </div>
+      <div id="gate-lm-status" style="margin-top:1rem"></div>
     </div>
 
   </div>
 </div>
 
-<!-- ====== HEADER ====== -->
-<header class="container-fluid alda-header">
-  <nav>
-    <ul>
-      <li><strong class="alda-logo">ALDA</strong> <span class="alda-sub">Autonomous Literature Search</span></li>
-    </ul>
-    <ul>
-      <li class="system-status">
-        <span class="status-indicator">
-          <span class="status-dot" id="dot-db" title="Connecting…"></span>
-          <span class="status-label" id="label-db">Database</span>
-        </span>
-        <span class="status-indicator">
-          <span class="status-dot" id="dot-llm" title="Checking…"></span>
-          <span class="status-label" id="label-llm">AI scoring</span>
-        </span>
-        <span class="status-indicator">
-          <span class="status-dot" id="dot-scraping" title="Checking…"></span>
-          <span class="status-label" id="label-scraping">Web scraping</span>
-        </span>
-      </li>
-      <li><button class="log-btn" id="btn-open-log" onclick="openLogModal()" title="View activity log">Log</button></li>
-      <li><button class="settings-btn" onclick="openSettings()" title="Settings">⚙</button></li>
-      <li><a href="https://github.com/lipanook123/alda" target="_blank" rel="noopener">GitHub</a></li>
-    </ul>
-  </nav>
-</header>
+<!-- ====== MAIN APP ====== -->
+<div id="app" class="hidden">
 
-<!-- ====== ACTIVITY LOG MODAL ====== -->
-<div id="log-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
-  <div class="modal-box log-modal-box">
-    <div class="log-modal-header">
+  <!-- Header -->
+  <header class="alda-header">
+    <div class="alda-header-brand">
+      <span class="alda-logo">ALDA</span>
+      <span class="alda-sub">Autonomous Literature Search</span>
+    </div>
+
+    <div class="alda-header-center">
+      <span class="status-indicator">
+        <span class="status-dot" id="dot-db" title="Connecting…"></span>
+        <span class="status-label" id="label-db">Database</span>
+      </span>
+      <span class="status-indicator">
+        <span class="status-dot" id="dot-lm" title="Checking…"></span>
+        <span class="status-label" id="label-lm">Language model</span>
+      </span>
+      <span class="status-indicator">
+        <span class="status-dot" id="dot-scraping" title="Checking…"></span>
+        <span class="status-label" id="label-scraping">Web scraping</span>
+      </span>
+    </div>
+
+    <div class="alda-header-actions">
+      <button id="btn-open-log" class="alda-btn alda-btn-secondary" onclick="openLogModal()">Log</button>
+      <button class="alda-btn alda-btn-secondary" onclick="openSettings()" title="Settings">⚙ Settings</button>
+      <a href="https://github.com/lipanook123/alda" target="_blank" rel="noopener" class="alda-btn alda-btn-secondary">GitHub</a>
+    </div>
+  </header>
+
+  <!-- Search switcher bar -->
+  <div id="search-switcher" class="alda-switcher hidden">
+    <div class="alda-switcher-left">
+      <span class="alda-switcher-cur-label">Current search:</span>
+      <span id="switcher-brief" class="alda-switcher-brief"></span>
+      <button class="alda-switcher-dropdown-btn" id="btn-switcher-dropdown" onclick="toggleSwitcherDropdown()">▼</button>
+    </div>
+    <button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="newSearch()">+ New Search</button>
+    <!-- Dropdown -->
+    <div id="switcher-dropdown" class="alda-switcher-dropdown hidden"></div>
+  </div>
+
+  <!-- Wizard nav -->
+  <div class="alda-wizard-wrap">
+    <nav class="alda-wizard-nav" aria-label="Search workflow">
+      <div class="alda-step active" id="wiz-brief" data-step="brief" onclick="showStep('brief')">
+        <div class="alda-step-circle">1</div>
+        <span class="alda-step-label">Brief</span>
+      </div>
+      <div class="alda-step-connector"></div>
+      <div class="alda-step disabled" id="wiz-search" data-step="search" onclick="showStep('search')">
+        <div class="alda-step-circle">2</div>
+        <span class="alda-step-label">Search</span>
+      </div>
+      <div class="alda-step-connector"></div>
+      <div class="alda-step disabled" id="wiz-results" data-step="results" onclick="showStep('results')">
+        <div class="alda-step-circle">3</div>
+        <span class="alda-step-label">Results</span>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Main content -->
+  <main class="alda-main">
+
+    <!-- ====== STEP 1: BRIEF ====== -->
+    <section id="panel-brief" class="alda-panel">
+      <div class="alda-panel-intro">
+        <h2>What are you researching?</h2>
+        <p>Describe your research question in plain language. ALDA will automatically identify
+           keywords, date ranges, and inclusion or exclusion criteria.</p>
+      </div>
+
+      <div class="alda-two-col">
+        <div>
+          <label for="mission-text">Research question</label>
+          <textarea id="mission-text" rows="9"
+            placeholder="Example: Conduct a systematic literature review on climate change adaptation strategies in Sub-Saharan Africa from 2015 to 2024. Focus on peer-reviewed studies and reports from international organisations. Exclude studies focused only on mitigation."></textarea>
+          <p class="alda-field-help">Tip: include the topic, time period, source types you want, and anything to exclude. A few sentences is enough.</p>
+          <div class="alda-btn-row">
+            <button id="btn-parse" class="alda-btn alda-btn-primary alda-btn-lg">Parse Brief</button>
+            <span id="parse-status" class="alda-status-msg"></span>
+          </div>
+        </div>
+
+        <div id="brief-preview" class="alda-brief-preview hidden">
+          <h4>What ALDA found in your question</h4>
+          <div id="brief-content"></div>
+          <div class="alda-btn-row" style="margin-top:1rem">
+            <button id="btn-go-search" class="alda-btn alda-btn-primary">Run Search →</button>
+          </div>
+        </div>
+      </div>
+
+      <details id="recent-queries-section" class="hidden" style="margin-top:2.5rem">
+        <summary>Resume a previous search</summary>
+        <div id="recent-queries-list" style="margin-top:1rem"></div>
+      </details>
+    </section>
+
+    <!-- ====== STEP 2: SEARCH ====== -->
+    <section id="panel-search" class="alda-panel hidden">
+      <div class="alda-panel-intro">
+        <h2>Run your search</h2>
+        <p>ALDA will search multiple academic databases and return matching sources.
+           This usually takes 1–3 minutes. You don't need to do anything while it runs.</p>
+      </div>
+
+      <div id="no-query-warn" class="alda-alert alda-alert-warning hidden" style="margin-bottom:1.5rem">
+        <strong>No research question yet.</strong>
+        <button class="alda-btn alda-btn-secondary alda-btn-sm" style="margin-left:1rem"
+          onclick="showStep('brief')">← Go to Step 1</button>
+      </div>
+
+      <div id="search-form">
+        <div class="alda-btn-row" style="margin-bottom:1.5rem">
+          <button id="btn-search" class="alda-btn alda-btn-primary alda-btn-lg">Start Search</button>
+          <span id="search-status-msg" class="alda-status-msg"></span>
+        </div>
+
+        <!-- Language model cost estimate -->
+        <div id="token-estimate" class="alda-token-estimate hidden">
+          <div id="token-estimate-text"></div>
+          <div class="alda-token-budget-row">
+            <label>
+              Spending limit (optional):
+              <span class="budget-input-wrap">
+                <span class="budget-symbol">$</span>
+                <input type="number" id="token-budget-dollars" min="0" step="0.01" placeholder="no limit" />
+              </span>
+            </label>
+            <small class="alda-field-help">ALDA stops language model scoring when the limit is reached — all sources are still returned.</small>
+          </div>
+        </div>
+
+        <!-- Progress (shown during search) -->
+        <div id="search-progress" class="hidden" style="margin-bottom:1.5rem">
+          <div class="alda-progress-bar">
+            <div id="search-progress-fill" class="alda-progress-fill" style="width:0%"></div>
+          </div>
+          <div id="search-stats" class="search-stats"></div>
+          <div id="source-breakdown" style="margin-top:0.5rem"></div>
+        </div>
+
+        <!-- Advanced options -->
+        <details id="search-advanced">
+          <summary>Advanced options</summary>
+          <div class="alda-advanced-panel">
+
+            <fieldset>
+              <legend>Core academic databases</legend>
+              <label><input type="checkbox" name="source" value="semantic_scholar" checked /> Semantic Scholar</label>
+              <label><input type="checkbox" name="source" value="crossref" checked /> CrossRef</label>
+              <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
+              <label><input type="checkbox" name="source" value="arxiv" checked /> arXiv</label>
+              <label><input type="checkbox" name="source" value="pubmed" checked /> PubMed</label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Global open access (English + multilingual)</legend>
+              <label><input type="checkbox" name="source" value="core" checked /> CORE — 300M+ open access papers from repositories worldwide</label>
+              <label><input type="checkbox" name="source" value="europe_pmc" checked /> Europe PMC — 40M biomedical papers, European focus</label>
+              <label><input type="checkbox" name="source" value="doaj" checked /> DOAJ — 10M+ articles from all-language open access journals</label>
+              <label><input type="checkbox" name="source" value="base" checked /> BASE — 400M+ docs from 10,000+ repositories (incl. Chinese, Russian, Korean, Arabic)</label>
+              <label><input type="checkbox" name="source" value="openaire" checked /> OpenAIRE — European multilingual open science</label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Regional &amp; language-specific</legend>
+              <label><input type="checkbox" name="source" value="scielo" /> SciELO — Spanish &amp; Portuguese research (Latin America, Spain, Portugal)</label>
+              <label><input type="checkbox" name="source" value="jstage" /> J-STAGE — Japanese science journals</label>
+              <label><input type="checkbox" name="source" value="cyberleninka" /> CyberLeninka — Russian open access</label>
+              <label><input type="checkbox" name="source" value="who_iris" /> WHO IRIS — WHO publications in six UN languages</label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Specialist databases</legend>
+              <label><input type="checkbox" name="source" value="eric" /> ERIC — Education research (US Dept of Education)</label>
+              <label><input type="checkbox" name="source" value="clinicaltrials" /> ClinicalTrials.gov — Clinical trial registrations</label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Web sources</legend>
+              <label id="lbl-google">
+                <input type="checkbox" name="source" value="google_cse" />
+                Google CSE
+                <span class="badge-key">Server API key required —
+                  <a href="https://programmablesearchengine.google.com/about/" target="_blank" rel="noopener">get key ↗</a>
+                </span>
+              </label>
+              <label id="lbl-bing">
+                <input type="checkbox" name="source" value="bing" />
+                Bing Search
+                <span class="badge-key">Server API key required —
+                  <a href="https://www.microsoft.com/en-us/bing/apis/bing-web-search-api" target="_blank" rel="noopener">get key ↗</a>
+                </span>
+              </label>
+              <label><input type="checkbox" name="source" value="duckduckgo" checked /> DuckDuckGo (free, no key needed)</label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Language model relevance scoring</legend>
+              <label>
+                <input type="checkbox" id="use-lm" checked />
+                Score each result for relevance using a language model
+              </label>
+              <p class="alda-field-help" style="margin-top:0.4rem">Requires a language model API key. If not configured, this option is safely ignored and all results are still returned.</p>
+            </fieldset>
+
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ====== STEP 3: RESULTS ====== -->
+    <section id="panel-results" class="alda-panel hidden">
+
+      <!-- Sub-tab navigation -->
+      <div class="alda-sub-nav-wrap">
+        <nav class="alda-sub-nav" aria-label="Results sections">
+          <button class="alda-sub-tab active" data-sub="results"  onclick="showSubTab('results')">Results</button>
+          <button class="alda-sub-tab"        data-sub="upload"   onclick="showSubTab('upload')">Upload Sources</button>
+          <button class="alda-sub-tab"        data-sub="themes"   onclick="showSubTab('themes')">Themes</button>
+          <button class="alda-sub-tab"        data-sub="export"   onclick="showSubTab('export')">Export</button>
+        </nav>
+      </div>
+
+      <!-- Sub-panel: Results -->
+      <div id="sub-results" class="alda-sub-panel">
+        <!-- Filter & sort (collapsible) -->
+        <details style="margin-bottom:1rem">
+          <summary>Filter &amp; sort results</summary>
+          <div class="alda-advanced-panel" style="margin-top:0.75rem">
+            <div class="alda-filters-grid">
+              <label>Source type
+                <select id="filter-type">
+                  <option value="all">All sources</option>
+                  <option value="academic">Academic papers only</option>
+                  <option value="grey">Web sources only</option>
+                  <option value="upload">Uploaded by me</option>
+                </select>
+              </label>
+              <label>Sort by
+                <select id="filter-sort">
+                  <option value="relevance">Relevance</option>
+                  <option value="year">Year (newest first)</option>
+                  <option value="citation_count">Most cited</option>
+                  <option value="title">Title (A–Z)</option>
+                </select>
+              </label>
+              <div>
+                <label>Minimum relevance</label>
+                <input type="range" id="filter-relevance" min="0" max="100" value="0" step="5" />
+                <span id="relevance-val">0%</span>
+              </div>
+              <div style="align-self:end">
+                <button id="btn-filter" class="alda-btn alda-btn-secondary">Apply</button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <p id="results-count" class="alda-status-msg" style="margin-bottom:1rem"></p>
+        <div id="results-list"></div>
+        <div class="alda-btn-row" id="load-more-row" style="display:none">
+          <button id="btn-load-more" class="alda-btn alda-btn-secondary">Load more results</button>
+        </div>
+      </div>
+
+      <!-- Sub-panel: Upload -->
+      <div id="sub-upload" class="alda-sub-panel hidden">
+        <div class="alda-panel-intro">
+          <h3>Add your own sources</h3>
+          <p>Upload a CSV, JSON, or database file. ALDA merges them with your search results and removes duplicates automatically.</p>
+        </div>
+        <div class="drop-zone" id="drop-zone">
+          <p>Drag &amp; drop your file here, or click to select</p>
+          <p><small>Accepted: CSV, JSON, JSONL, DuckDB</small></p>
+          <input type="file" id="file-input" accept=".csv,.json,.jsonl,.duckdb,.db" hidden />
+        </div>
+        <p id="upload-file-name" class="alda-status-msg" style="margin-top:0.5rem"></p>
+        <div class="alda-btn-row">
+          <button id="btn-upload" class="alda-btn alda-btn-primary" disabled>Upload</button>
+        </div>
+        <div id="upload-result" class="hidden upload-result"></div>
+
+        <details style="margin-top:2rem">
+          <summary>How to prepare a CSV file</summary>
+          <div class="alda-advanced-panel">
+            <p>Each row is one source. You need at least one of: a <strong>URL</strong> or a <strong>DOI</strong>
+               (e.g. <code>10.1234/example</code>).</p>
+            <p><strong>Optional columns:</strong></p>
+            <ul>
+              <li><strong>title</strong></li>
+              <li><strong>authors</strong> — semicolon-separated, e.g. <code>Smith J; Jones A</code></li>
+              <li><strong>year</strong> — e.g. <code>2022</code></li>
+              <li><strong>abstract</strong></li>
+              <li><strong>venue</strong> — journal name, conference, or publisher</li>
+            </ul>
+            <pre><code>url,title,authors,year
+https://example.org/paper1,My Paper Title,Smith J; Jones A,2022</code></pre>
+          </div>
+        </details>
+      </div>
+
+      <!-- Sub-panel: Themes -->
+      <div id="sub-themes" class="alda-sub-panel hidden">
+        <div class="alda-panel-intro">
+          <h3>Thematic clusters</h3>
+          <p>ALDA groups your sources into themes automatically. Larger tags mean more sources belong to that theme. Click any tag to filter your results.</p>
+        </div>
+        <div class="alda-btn-row">
+          <button id="btn-cluster" class="alda-btn alda-btn-primary">Find Themes</button>
+          <span id="cluster-status" class="alda-status-msg"></span>
+        </div>
+        <div id="theme-cloud" style="margin-top:1.5rem"></div>
+      </div>
+
+      <!-- Sub-panel: Export -->
+      <div id="sub-export" class="alda-sub-panel hidden">
+        <div class="alda-panel-intro">
+          <h3>Export your results</h3>
+          <p>Download as a spreadsheet or structured JSON file. The PRISMA section generates a flow table required by many academic journals.</p>
+        </div>
+        <div class="alda-two-col">
+          <div>
+            <p class="alda-section-title">File format</p>
+            <fieldset style="margin-bottom:1.5rem">
+              <legend>Format</legend>
+              <label><input type="radio" name="export-format" value="csv" checked /> CSV — opens in Excel, Google Sheets, etc.</label>
+              <label><input type="radio" name="export-format" value="json" /> JSON — for developers and data tools</label>
+            </fieldset>
+            <label style="display:flex;align-items:center;gap:0.5rem;font-weight:400;margin-bottom:0.5rem">
+              <input type="checkbox" id="export-current-query" checked style="width:auto" />
+              Export this search only
+            </label>
+            <p class="alda-field-help">(uncheck to export every source ever added to ALDA)</p>
+            <div class="alda-btn-row" style="margin-top:1.5rem">
+              <button id="btn-export" class="alda-btn alda-btn-primary">Download</button>
+            </div>
+          </div>
+          <div>
+            <p class="alda-section-title">PRISMA flow statistics</p>
+            <p class="alda-field-help">PRISMA (Preferred Reporting Items for Systematic Reviews and Meta-Analyses) is the international standard for documenting your search process. Most academic journals require a PRISMA flow diagram.</p>
+            <div id="prisma-stats" style="margin-top:1rem">
+              <button id="btn-prisma" class="alda-btn alda-btn-secondary">Generate PRISMA table</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+    <!-- end panel-results -->
+
+  </main>
+
+  <footer>
+    ALDA v0.1.0 —
+    <a href="https://github.com/lipanook123/alda" target="_blank" rel="noopener">Open source (AGPLv3)</a> —
+    <a href="#" onclick="openLmGateFromSettings(); return false;">Change language model settings</a>
+  </footer>
+
+</div>
+<!-- end #app -->
+
+<!-- ====== LOG MODAL ====== -->
+<div id="log-modal" class="alda-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
+  <div class="alda-modal alda-modal-lg">
+    <div class="alda-modal-header">
       <h3 id="log-modal-title" style="margin:0">Activity Log</h3>
       <div style="display:flex;gap:0.5rem">
-        <button class="secondary" id="btn-copy-log" onclick="copyLog()">Copy to clipboard</button>
-        <button class="secondary" onclick="closeLogModal()">Close</button>
+        <button id="btn-copy-log" class="alda-btn alda-btn-secondary alda-btn-sm" onclick="copyLog()">Copy</button>
+        <button class="alda-modal-close" onclick="closeLogModal()">✕</button>
       </div>
     </div>
-    <p class="field-help" style="margin:0.5rem 0 0.75rem">All API calls, errors, and search progress — useful for diagnosing problems.</p>
-    <div id="log-content" class="log-content"></div>
+    <div class="alda-modal-body">
+      <p class="alda-field-help" style="margin-bottom:0.75rem">All API calls, errors, and search progress — useful for diagnosing problems.</p>
+      <div id="log-content" class="log-content"></div>
+    </div>
   </div>
 </div>
 
 <!-- ====== SETTINGS MODAL ====== -->
-<div id="settings-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-  <div class="modal-box settings-modal-box">
-    <div class="settings-header">
+<div id="settings-modal" class="alda-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+  <div class="alda-modal alda-modal-md">
+    <div class="alda-modal-header">
       <h3 id="settings-modal-title" style="margin:0">Settings</h3>
-      <button class="secondary" onclick="closeSettings()">✕</button>
+      <button class="alda-modal-close" onclick="closeSettings()">✕</button>
     </div>
+    <div class="alda-modal-body">
 
-    <!-- Search behaviour -->
-    <section class="settings-section">
-      <h4>Search behaviour</h4>
-      <div class="settings-field">
-        <label>Maximum results per search</label>
-        <div class="results-options" id="results-options">
-          <button class="results-opt" data-val="200" onclick="selectMaxResults(200)">200</button>
-          <button class="results-opt active" data-val="500" onclick="selectMaxResults(500)">500</button>
-          <button class="results-opt" data-val="1000" onclick="selectMaxResults(1000)">1 000</button>
-          <button class="results-opt" data-val="2000" onclick="selectMaxResults(2000)">2 000</button>
-          <button class="results-opt" data-val="0" onclick="selectMaxResults(0)">Unlimited</button>
-          <input type="number" id="settings-max-results-custom" min="50" step="50"
-            placeholder="Custom" style="width:90px" oninput="selectMaxResultsCustom(this.value)" />
-        </div>
-        <p class="field-help">Unlimited relies on saturation detection to stop automatically (5 iterations max).</p>
-      </div>
-      <div class="settings-field">
-        <label>
-          <input type="checkbox" id="settings-use-llm" />
-          Score results for relevance using AI (on by default)
-        </label>
-      </div>
-      <div class="settings-field">
-        <label>Default spending limit per search (USD)
-          <input type="number" id="settings-budget" min="0" step="0.10" placeholder="No limit" style="width:120px" />
-        </label>
-        <p class="field-help">Leave blank for no limit. Applies when AI scoring is enabled.</p>
-      </div>
-    </section>
-
-    <!-- AI provider -->
-    <section class="settings-section">
-      <h4>AI provider</h4>
-      <div id="settings-ai-status" class="settings-ai-status"></div>
-      <button class="secondary" onclick="closeSettings(); openSetupWizard();">Change AI settings →</button>
-    </section>
-
-    <!-- Source API keys -->
-    <section class="settings-section">
-      <h4>Source API keys</h4>
-      <p class="field-help">These are optional. Providing them unlocks higher rate limits or enables additional search sources.</p>
-      <div class="settings-field">
-        <label>Semantic Scholar API key <span class="key-status" id="key-status-semantic"></span>
-          <input type="password" id="sk-semantic-scholar" autocomplete="off" placeholder="Optional — higher rate limits" />
-        </label>
-      </div>
-      <div class="settings-field">
-        <label>CORE API key <span class="key-status" id="key-status-core"></span>
-          <input type="password" id="sk-core" autocomplete="off" placeholder="Optional — 10→100 req/min" />
-        </label>
-      </div>
-      <div class="settings-field">
-        <label>Google CSE ID <span class="key-status" id="key-status-google"></span>
-          <input type="text" id="sk-google-cse-id" autocomplete="off" placeholder="Required to enable Google Search" />
-        </label>
-        <label style="margin-top:0.4rem;display:block">Google API key
-          <input type="password" id="sk-google-api-key" autocomplete="off" />
-        </label>
-      </div>
-      <div class="settings-field">
-        <label>Bing API key <span class="key-status" id="key-status-bing"></span>
-          <input type="password" id="sk-bing" autocomplete="off" placeholder="Required to enable Bing Search" />
-        </label>
-      </div>
-      <div class="btn-row" style="margin-top:0.75rem">
-        <button class="secondary" id="btn-save-keys" onclick="saveApiKeys()">Save API keys</button>
-        <span id="settings-keys-status" class="status-msg"></span>
-      </div>
-    </section>
-
-    <!-- Connection -->
-    <section class="settings-section">
-      <h4>Connection</h4>
-      <div class="settings-field">
-        <label>Backend server URL
-          <input type="url" id="settings-backend-url" placeholder="https://your-backend.onrender.com" />
-        </label>
-        <p class="field-help">Where ALDA's server is running. Saved to your browser — changes take effect on next page load.</p>
-      </div>
-      <button class="secondary" id="btn-save-url" onclick="saveBackendUrl()">Save URL &amp; reload</button>
-    </section>
-
-    <div style="text-align:right;padding-top:1rem;border-top:1px solid #dee2e6;margin-top:0.5rem">
-      <button class="secondary outline" onclick="closeSettings()" style="margin-right:0.5rem">Cancel</button>
-      <button class="primary" onclick="saveSettings()">Save settings</button>
-    </div>
-  </div>
-</div>
-
-<!-- ====== GUIDED BANNER ====== -->
-<div class="container-fluid guided-banner-wrap">
-  <div class="container guided-banner">
-    <div id="guided-step-indicator">
-      <span class="step-pip active" id="pip-1">1</span>
-      <span class="step-line"></span>
-      <span class="step-pip" id="pip-2">2</span>
-      <span class="step-line"></span>
-      <span class="step-pip" id="pip-3">3</span>
-    </div>
-    <div id="guided-message">
-      <strong id="guided-title">Step 1 — Describe your research question</strong>
-      <p id="guided-desc">Type your research question below, then click <strong>Parse Brief</strong> to continue.</p>
-    </div>
-  </div>
-</div>
-
-<!-- ====== TAB NAV ====== -->
-<div class="container-fluid tab-nav">
-  <div class="container">
-    <nav class="tabs">
-      <button class="tab-btn active" data-tab="mission">1. Your Question</button>
-      <button class="tab-btn" data-tab="search">2. Search</button>
-      <button class="tab-btn" data-tab="results">3. Results</button>
-      <button class="tab-btn" data-tab="upload">Upload Sources</button>
-      <button class="tab-btn" data-tab="export">Export</button>
-      <button class="tab-btn" data-tab="themes">Themes</button>
-    </nav>
-  </div>
-</div>
-
-<main class="container" id="main">
-
-  <!-- ====== TAB: MISSION ====== -->
-  <section id="tab-mission" class="tab-panel active">
-    <hgroup>
-      <h2>What are you researching?</h2>
-      <p>Describe your research question in plain language. ALDA will automatically identify
-         the key topics, relevant time periods, and what to include or exclude from your search.</p>
-    </hgroup>
-    <div class="grid">
-      <div>
-        <label for="mission-text">Your research question</label>
-        <textarea id="mission-text" rows="8"
-          placeholder="Example: Conduct a systematic literature review on climate change adaptation strategies in Sub-Saharan Africa from 2015 to 2024. Focus on peer-reviewed studies and reports from international organisations. Exclude studies focused only on mitigation."></textarea>
-        <p class="field-help">Tip: include the topic, the time period, the types of sources you want (e.g. journal articles, policy reports), and anything you want to leave out. A few sentences is enough.</p>
-        <div class="btn-row">
-          <button id="btn-parse" class="primary">Parse Brief</button>
-          <span id="parse-status" class="status-msg"></span>
-        </div>
-      </div>
-      <div id="brief-preview" class="brief-preview hidden">
-        <h4>What ALDA found in your question</h4>
-        <div id="brief-content"></div>
-        <div style="margin-top:1rem">
-          <button id="btn-go-search" class="primary">Run Search →</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent queries -->
-    <details id="recent-queries-section" class="hidden" style="margin-top:2rem">
-      <summary>Resume a previous search</summary>
-      <div id="recent-queries-list"></div>
-    </details>
-  </section>
-
-  <!-- ====== TAB: SEARCH ====== -->
-  <section id="tab-search" class="tab-panel hidden">
-    <hgroup>
-      <h2>Run Your Search</h2>
-      <p>ALDA will search multiple academic databases and return matching sources.
-         This usually takes 1–3 minutes. You don’t need to do anything while it runs.</p>
-    </hgroup>
-
-    <div id="no-query-warn" class="hidden">
-      <div class="empty-state">
-        <p>You haven’t described your research question yet.</p>
-        <button class="secondary" id="btn-go-mission">← Start at Step 1</button>
-      </div>
-    </div>
-
-    <div id="search-form">
-      <div class="btn-row" style="margin-bottom:1rem">
-        <button id="btn-search" class="primary btn-large">Start Search</button>
-        <span id="search-status-msg" class="status-msg"></span>
-      </div>
-
-      <!-- Token cost estimate -->
-      <div id="token-estimate" class="token-estimate hidden">
-        <div id="token-estimate-text"></div>
-        <div class="token-budget-row">
-          <label>
-            Spending limit (optional):
-            <span class="budget-input-wrap">
-              <span class="budget-symbol">$</span>
-              <input type="number" id="token-budget-dollars" min="0" step="0.01"
-                     placeholder="no limit" />
-            </span>
-          </label>
-          <small class="field-help">ALDA stops AI scoring when your limit is reached — all sources are still returned.</small>
-        </div>
-      </div>
-
-      <!-- Progress (shown during search) -->
-      <div id="search-progress" class="hidden">
-        <progress id="search-progress-bar" max="100" value="0"></progress>
-        <div id="search-stats" class="search-stats"></div>
-        <div id="source-breakdown" style="margin-top:0.5rem"></div>
-      </div>
-
-      <!-- Advanced options — collapsed by default -->
-      <details id="search-advanced" style="margin-top:2rem">
-        <summary class="advanced-toggle">Advanced options</summary>
-        <div class="advanced-panel">
-          <fieldset>
-            <legend>Core academic databases</legend>
-            <label><input type="checkbox" name="source" value="semantic_scholar" checked /> Semantic Scholar</label>
-            <label><input type="checkbox" name="source" value="crossref" checked /> CrossRef</label>
-            <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
-            <label><input type="checkbox" name="source" value="arxiv" checked /> arXiv</label>
-            <label><input type="checkbox" name="source" value="pubmed" checked /> PubMed</label>
-          </fieldset>
-          <fieldset>
-            <legend>Global open access (English + multilingual)</legend>
-            <label><input type="checkbox" name="source" value="core" checked /> CORE — 300M+ open access papers from repositories worldwide</label>
-            <label><input type="checkbox" name="source" value="europe_pmc" checked /> Europe PMC — 40M biomedical papers, European focus</label>
-            <label><input type="checkbox" name="source" value="doaj" checked /> DOAJ — 10M+ articles from all-language open access journals</label>
-            <label><input type="checkbox" name="source" value="base" checked /> BASE — 400M+ docs from 10,000+ repositories (incl. Chinese, Russian, Korean, Arabic)</label>
-            <label><input type="checkbox" name="source" value="openaire" checked /> OpenAIRE — European multilingual open science</label>
-          </fieldset>
-          <fieldset>
-            <legend>Regional &amp; language-specific databases</legend>
-            <label><input type="checkbox" name="source" value="scielo" /> SciELO — Spanish &amp; Portuguese research (Latin America, Spain, Portugal)</label>
-            <label><input type="checkbox" name="source" value="jstage" /> J-STAGE — Japanese science journals</label>
-            <label><input type="checkbox" name="source" value="cyberleninka" /> CyberLeninka — Russian open access (largest Russian OA repository)</label>
-            <label><input type="checkbox" name="source" value="who_iris" /> WHO IRIS — WHO publications in Arabic, Chinese, French, Russian, Spanish, English</label>
-          </fieldset>
-          <fieldset>
-            <legend>Specialist databases</legend>
-            <label><input type="checkbox" name="source" value="eric" /> ERIC — Education research (1.7M records, US Dept of Education)</label>
-            <label><input type="checkbox" name="source" value="clinicaltrials" /> ClinicalTrials.gov — Clinical trial registrations (500K+ trials)</label>
-          </fieldset>
-          <fieldset>
-            <legend>Web sources</legend>
-            <label id="lbl-google">
-              <input type="checkbox" name="source" value="google_cse" />
-              Google CSE
-              <span class="badge-key">Server API key required —
-                <a href="https://programmablesearchengine.google.com/about/" target="_blank" rel="noopener">get key ↗</a>
-              </span>
-            </label>
-            <label id="lbl-bing">
-              <input type="checkbox" name="source" value="bing" />
-              Bing Search
-              <span class="badge-key">Server API key required —
-                <a href="https://www.microsoft.com/en-us/bing/apis/bing-web-search-api" target="_blank" rel="noopener">get key ↗</a>
-              </span>
-            </label>
-            <label><input type="checkbox" name="source" value="duckduckgo" checked /> DuckDuckGo (free)</label>
-          </fieldset>
-          <fieldset>
-            <legend>AI relevance scoring</legend>
-            <label>
-              <input type="checkbox" id="use-llm" checked />
-              Score each result for relevance using AI
-            </label>
-            <p class="field-help">Requires an AI API key configured on the server. If not set up, this option is safely ignored and all results are still returned.</p>
-          </fieldset>
-        </div>
-      </details>
-    </div>
-  </section>
-
-  <!-- ====== TAB: RESULTS ====== -->
-  <section id="tab-results" class="tab-panel hidden">
-    <hgroup>
-      <h2>Your Results</h2>
-    </hgroup>
-
-    <!-- Post-search next-step actions -->
-    <div id="results-actions" class="hidden results-actions">
-      <p id="results-action-msg"></p>
-      <div class="btn-row">
-        <button class="secondary" onclick="switchTab('export')">Download as spreadsheet →</button>
-        <button class="secondary" onclick="switchTab('themes')">Explore themes →</button>
-      </div>
-    </div>
-
-    <!-- Filters -->
-    <details style="margin-bottom:1rem">
-      <summary class="advanced-toggle">Filter &amp; sort results</summary>
-      <div class="advanced-panel">
-        <div class="filters grid">
-          <label>
-            Source type
-            <select id="filter-type">
-              <option value="all">All sources</option>
-              <option value="academic">Academic papers only</option>
-              <option value="grey">Web sources only</option>
-              <option value="upload">Uploaded by me</option>
-            </select>
-          </label>
-          <label>
-            Sort by
-            <select id="filter-sort">
-              <option value="relevance">Relevance</option>
-              <option value="year">Year (newest first)</option>
-              <option value="citation_count">Most cited</option>
-              <option value="title">Title (A–Z)</option>
-            </select>
-          </label>
-          <label>
-            Minimum relevance
-            <input type="range" id="filter-relevance" min="0" max="100" value="0" step="5" />
-            <span id="relevance-val">0%</span>
-          </label>
-          <div style="align-self:end">
-            <button id="btn-filter" class="secondary">Apply</button>
+      <!-- Search behaviour -->
+      <div class="settings-section">
+        <h4>Search behaviour</h4>
+        <div class="settings-field">
+          <label>Maximum results per search</label>
+          <div class="results-options" id="results-options">
+            <button class="results-opt" data-val="200" onclick="selectMaxResults(200)">200</button>
+            <button class="results-opt active" data-val="500" onclick="selectMaxResults(500)">500</button>
+            <button class="results-opt" data-val="1000" onclick="selectMaxResults(1000)">1 000</button>
+            <button class="results-opt" data-val="2000" onclick="selectMaxResults(2000)">2 000</button>
+            <button class="results-opt" data-val="0" onclick="selectMaxResults(0)">Unlimited</button>
+            <input type="number" id="settings-max-results-custom" min="50" step="50"
+              placeholder="Custom" style="width:90px" oninput="selectMaxResultsCustom(this.value)" />
           </div>
+          <p class="alda-field-help">Unlimited relies on saturation detection to stop automatically.</p>
+        </div>
+        <div class="settings-field">
+          <label style="display:flex;align-items:center;gap:0.5rem;font-weight:400">
+            <input type="checkbox" id="settings-use-lm" style="width:auto" />
+            Score results for relevance using a language model (on by default)
+          </label>
+        </div>
+        <div class="settings-field">
+          <label>Default spending limit per search (USD)
+            <input type="number" id="settings-budget" min="0" step="0.10" placeholder="No limit" style="width:120px" />
+          </label>
+          <p class="alda-field-help">Leave blank for no limit. Applies when language model scoring is enabled.</p>
         </div>
       </div>
-    </details>
 
-    <p id="results-count" class="muted"></p>
-    <div id="results-list"></div>
-    <div class="btn-row" id="load-more-row" style="display:none">
-      <button id="btn-load-more" class="secondary">Load more results</button>
-    </div>
-  </section>
-
-  <!-- ====== TAB: UPLOAD ====== -->
-  <section id="tab-upload" class="tab-panel hidden">
-    <hgroup>
-      <h2>Add Your Own Sources</h2>
-      <p>Already have a list of sources? Upload a CSV, JSON, or database file.
-         ALDA will merge them with your search results and remove any duplicates automatically.</p>
-    </hgroup>
-    <div class="drop-zone" id="drop-zone">
-      <p>Drag &amp; drop your file here, or click to select</p>
-      <p><small>Accepted formats: CSV spreadsheet, JSON, or DuckDB database file</small></p>
-      <input type="file" id="file-input" accept=".csv,.json,.jsonl,.duckdb,.db" hidden />
-    </div>
-    <div id="upload-file-name" class="muted"></div>
-    <div class="btn-row">
-      <button id="btn-upload" class="primary" disabled>Upload</button>
-    </div>
-    <div id="upload-result" class="hidden upload-result"></div>
-
-    <details style="margin-top:1.5rem">
-      <summary class="advanced-toggle">How to prepare a CSV file</summary>
-      <div class="advanced-panel">
-        <p>Each row is one source. You need at least one of: a <strong>URL</strong> or a <strong>DOI</strong>
-           (a digital object identifier — looks like <code>10.1234/example</code>).</p>
-        <p><strong>Optional columns you can include:</strong></p>
-        <ul>
-          <li><strong>title</strong> — the title of the source</li>
-          <li><strong>authors</strong> — semicolon-separated, e.g. <code>Smith J; Jones A; Lee K</code></li>
-          <li><strong>year</strong> — publication year, e.g. <code>2022</code></li>
-          <li><strong>abstract</strong> — the abstract or summary text</li>
-          <li><strong>venue</strong> — journal name, conference, or publisher</li>
-        </ul>
-        <p><strong>Example (first two rows of your CSV):</strong></p>
-        <pre><code>url,title,authors,year
-https://example.org/paper1,My Paper Title,Smith J; Jones A,2022</code></pre>
+      <!-- Language Model -->
+      <div class="settings-section">
+        <h4>Language Model</h4>
+        <div id="settings-lm-status" style="margin-bottom:0.75rem"></div>
+        <button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="closeSettings(); openLmGateFromSettings();">Change language model settings →</button>
       </div>
-    </details>
-  </section>
 
-  <!-- ====== TAB: EXPORT ====== -->
-  <section id="tab-export" class="tab-panel hidden">
-    <hgroup>
-      <h2>Export Your Results</h2>
-      <p>Download your sources as a spreadsheet you can open in Excel or Google Sheets,
-         or as a structured JSON file for developers.
-         The PRISMA section generates a flow table required by many academic journals.</p>
-    </hgroup>
-    <div class="grid">
-      <div>
-        <fieldset>
-          <legend>File format</legend>
-          <label><input type="radio" name="export-format" value="csv" checked /> CSV — opens in Excel, Google Sheets, etc.</label>
-          <label><input type="radio" name="export-format" value="json" /> JSON — for developers and data tools</label>
-        </fieldset>
-        <label>
-          <input type="checkbox" id="export-current-query" checked />
-          Export this search only
-          <p class="field-help" style="margin:0">(uncheck to export every source ever added to ALDA)</p>
-        </label>
-        <div class="btn-row" style="margin-top:1rem">
-          <button id="btn-export" class="primary">Download</button>
+      <!-- Source API keys -->
+      <div class="settings-section">
+        <h4>Source API keys</h4>
+        <p class="alda-field-help">Optional. Providing keys unlocks higher rate limits or enables additional search sources.</p>
+        <div class="settings-field">
+          <label>Semantic Scholar <span class="key-status" id="key-status-semantic"></span>
+            <input type="password" id="sk-semantic-scholar" autocomplete="off" placeholder="Optional — higher rate limits" />
+          </label>
+        </div>
+        <div class="settings-field">
+          <label>CORE <span class="key-status" id="key-status-core"></span>
+            <input type="password" id="sk-core" autocomplete="off" placeholder="Optional — 10→100 req/min" />
+          </label>
+        </div>
+        <div class="settings-field">
+          <label>Google CSE ID <span class="key-status" id="key-status-google"></span>
+            <input type="text" id="sk-google-cse-id" autocomplete="off" placeholder="Required for Google Search" />
+          </label>
+          <label style="margin-top:0.4rem">Google API key
+            <input type="password" id="sk-google-api-key" autocomplete="off" />
+          </label>
+        </div>
+        <div class="settings-field">
+          <label>Bing <span class="key-status" id="key-status-bing"></span>
+            <input type="password" id="sk-bing" autocomplete="off" placeholder="Required for Bing Search" />
+          </label>
+        </div>
+        <div class="alda-btn-row" style="margin-top:0.75rem">
+          <button id="btn-save-keys" class="alda-btn alda-btn-secondary" onclick="saveApiKeys()">Save API keys</button>
+          <span id="settings-keys-status" class="alda-status-msg"></span>
         </div>
       </div>
-      <div>
-        <h4>PRISMA Flow Statistics</h4>
-        <p class="field-help">PRISMA (Preferred Reporting Items for Systematic Reviews and Meta-Analyses) is the international standard for documenting your search process. Most academic journals require a PRISMA flow diagram when you submit a systematic review.</p>
-        <div id="prisma-stats" style="margin-top:1rem">
-          <button id="btn-prisma" class="secondary">Generate PRISMA table</button>
+
+      <!-- Connection -->
+      <div class="settings-section">
+        <h4>Connection</h4>
+        <div class="settings-field">
+          <label>Backend server URL
+            <input type="url" id="settings-backend-url" placeholder="https://your-backend.onrender.com" />
+          </label>
+          <p class="alda-field-help">Saved to your browser — changes take effect on next page load.</p>
         </div>
+        <button class="alda-btn alda-btn-secondary alda-btn-sm" id="btn-save-url" onclick="saveBackendUrl()">Save URL &amp; reload</button>
       </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:0.75rem;padding-top:1.25rem;border-top:1px solid #ccc;margin-top:0.5rem">
+        <button class="alda-btn alda-btn-secondary" onclick="closeSettings()">Cancel</button>
+        <button class="alda-btn alda-btn-primary" onclick="saveSettings()">Save settings</button>
+      </div>
+
     </div>
-  </section>
+  </div>
+</div>
 
-  <!-- ====== TAB: THEMES ====== -->
-  <section id="tab-themes" class="tab-panel hidden">
-    <hgroup>
-      <h2>Thematic Clusters</h2>
-      <p>ALDA groups your sources into themes automatically — useful for spotting the main topics
-         in your results. Larger tags mean more sources belong to that theme.
-         Click any tag to go to your results filtered by that theme.</p>
-    </hgroup>
-    <div class="btn-row">
-      <button id="btn-cluster" class="primary">Find Themes</button>
-      <span id="cluster-status" class="status-msg"></span>
-    </div>
-    <div id="theme-cloud" style="margin-top:1.5rem"></div>
-  </section>
-
-</main>
-
-<footer class="container-fluid">
-  <small>
-    ALDA v0.1.0 — <a href="https://github.com/lipanook123/alda" target="_blank">Open source (AGPLv3)</a> —
-    <a href="#" onclick="openSetupWizard(); return false;">AI API key setup</a>
-  </small>
-</footer>
-
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/app.js?v=2"></script>
 </body>
 </html>
