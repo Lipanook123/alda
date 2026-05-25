@@ -1052,6 +1052,20 @@ function updateProgress(job) {
 // ──────────────────────────────────────────────
 function initResults() {
   document.getElementById("btn-filter")?.addEventListener("click", () => { state.resultsPage = 1; loadResults(true); });
+  document.getElementById("btn-clear-filters")?.addEventListener("click", () => {
+    const t = document.getElementById("filter-type");
+    const s = document.getElementById("filter-sort");
+    const r = document.getElementById("filter-relevance");
+    const v = document.getElementById("relevance-val");
+    const ps = document.getElementById("filter-page-size");
+    if (t) t.value = "all";
+    if (s) s.value = "relevance";
+    if (r) r.value = "0";
+    if (v) v.textContent = "0%";
+    if (ps) ps.value = "50";
+    state.resultsPage = 1;
+    loadResults(true);
+  });
   document.getElementById("btn-load-more")?.addEventListener("click", () => { state.resultsPage++; loadResults(false); });
   document.getElementById("filter-relevance")?.addEventListener("input", function () {
     const el = document.getElementById("relevance-val");
@@ -1066,36 +1080,59 @@ async function loadResults(reset = false) {
     document.getElementById("results-list").innerHTML = "";
   }
 
-  const type   = document.getElementById("filter-type")?.value || "all";
-  const sort   = document.getElementById("filter-sort")?.value || "relevance";
-  const minRel = ((parseInt(document.getElementById("filter-relevance")?.value || "0", 10)) / 100).toFixed(2);
+  const type     = document.getElementById("filter-type")?.value || "all";
+  const sort     = document.getElementById("filter-sort")?.value || "relevance";
+  const minRel   = ((parseInt(document.getElementById("filter-relevance")?.value || "0", 10)) / 100).toFixed(2);
+  const pageSize = parseInt(document.getElementById("filter-page-size")?.value || "50", 10);
+  const filtersActive = type !== "all" || parseFloat(minRel) > 0;
 
   try {
-    const sources = await api("GET",
-      `/api/v1/search/results/${state.queryId}?page=${state.resultsPage}&page_size=50` +
-      `&sort_by=${sort}&source_type=${type}&min_relevance=${minRel}`
-    );
+    const [sources, counts] = await Promise.all([
+      api("GET",
+        `/api/v1/search/results/${state.queryId}?page=${state.resultsPage}&page_size=${pageSize}` +
+        `&sort_by=${sort}&source_type=${type}&min_relevance=${minRel}`
+      ),
+      api("GET",
+        `/api/v1/search/results/${state.queryId}/count` +
+        `?source_type=${type}&min_relevance=${minRel}`
+      ),
+    ]);
 
     if (reset) document.getElementById("results-list").innerHTML = "";
 
-    if (!sources.length && state.resultsPage === 1) {
+    if (!counts.total && state.resultsPage === 1) {
       document.getElementById("results-list").innerHTML = `
         <div class="empty-state">
           <p>No results yet.</p>
           <p>Go to <strong>Step 2: Search</strong> to run a search, or use <strong>Upload Sources</strong> to add your own.</p>
           <button class="alda-btn alda-btn-secondary" style="margin-top:0.75rem" onclick="showStep('search')">Run a search →</button>
         </div>`;
+      document.getElementById("results-count").textContent = "";
       document.getElementById("load-more-row").style.display = "none";
       return;
     }
 
-    document.getElementById("results-count").textContent =
-      `Showing ${sources.length} source${sources.length !== 1 ? "s" : ""}` +
-      (state.resultsPage > 1 ? ` (page ${state.resultsPage})` : "");
+    if (!sources.length && state.resultsPage === 1) {
+      document.getElementById("results-list").innerHTML = `
+        <div class="empty-state">
+          <p>No results match your current filters.</p>
+          <button class="alda-btn alda-btn-secondary" style="margin-top:0.75rem"
+            onclick="document.getElementById('btn-clear-filters').click()">Clear filters</button>
+        </div>`;
+      document.getElementById("results-count").textContent =
+        `0 of ${counts.total} result${counts.total !== 1 ? "s" : ""}`;
+      document.getElementById("load-more-row").style.display = "none";
+      return;
+    }
+
+    const shown = (state.resultsPage - 1) * pageSize + sources.length;
+    document.getElementById("results-count").textContent = filtersActive
+      ? `${counts.filtered} of ${counts.total} result${counts.total !== 1 ? "s" : ""} (filtered)`
+      : `${counts.total} result${counts.total !== 1 ? "s" : ""}`;
 
     const cards = sources.map(renderSourceCard).join("");
     document.getElementById("results-list").insertAdjacentHTML("beforeend", cards);
-    document.getElementById("load-more-row").style.display = sources.length >= 50 ? "flex" : "none";
+    document.getElementById("load-more-row").style.display = shown < counts.filtered ? "flex" : "none";
 
     document.querySelectorAll(".result-abstract").forEach(el => {
       el.addEventListener("click", () => el.classList.toggle("expanded"));
@@ -1352,8 +1389,6 @@ async function loadThemes() {
     container.querySelectorAll(".theme-tag").forEach(tag => {
       tag.addEventListener("click", () => {
         showSubTab("results");
-        document.getElementById("results-count").textContent =
-          `Showing results for theme: ${tag.dataset.theme}`;
         loadResults(true);
       });
     });

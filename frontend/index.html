@@ -359,8 +359,17 @@
                 <input type="range" id="filter-relevance" min="0" max="100" value="0" step="5" />
                 <span id="relevance-val">0%</span>
               </div>
-              <div style="align-self:end">
+              <label>Results per page
+                <select id="filter-page-size">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+              </label>
+              <div style="align-self:end; display:flex; gap:0.5rem; flex-wrap:wrap">
                 <button id="btn-filter" class="alda-btn alda-btn-secondary">Apply</button>
+                <button id="btn-clear-filters" class="alda-btn alda-btn-secondary">Clear</button>
               </div>
             </div>
           </div>

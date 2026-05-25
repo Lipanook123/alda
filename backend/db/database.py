@@ -115,6 +115,34 @@ def insert_query_log(conn, query_id: str, source_id: str, matched: bool = True, 
     )
 
 
+def count_sources_for_query(conn, query_id: str, source_type: str = "all",
+                            min_relevance: float = 0.0) -> dict:
+    filters = ["ql.query_id = ?"]
+    params: list = [query_id]
+
+    if source_type != "all":
+        filters.append("s.source_type = ?")
+        params.append(source_type)
+
+    if min_relevance > 0:
+        filters.append("(s.relevance IS NULL OR s.relevance >= ?)")
+        params.append(min_relevance)
+
+    where = " AND ".join(filters)
+    total_params = [query_id]
+    total_where = "ql.query_id = ?"
+
+    filtered = conn.execute(
+        f"SELECT COUNT(*) FROM sources s JOIN query_logs ql ON s.id = ql.source_id WHERE {where}",
+        params,
+    ).fetchone()[0]
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM sources s JOIN query_logs ql ON s.id = ql.source_id WHERE {total_where}",
+        total_params,
+    ).fetchone()[0]
+    return {"filtered": filtered, "total": total}
+
+
 def get_sources_for_query(conn, query_id: str, page: int = 1, page_size: int = 50,
                            sort_by: str = "relevance", source_type: str = "all",
                            min_relevance: float = 0.0) -> list[dict]:

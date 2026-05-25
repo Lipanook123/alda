@@ -28,6 +28,18 @@ async def get_status(job_id: str) -> SearchJobStatus:
     return job
 
 
+@router.get("/results/{query_id}/count")
+async def get_results_count(
+    query_id: str,
+    source_type: str = Query("all", pattern="^(all|academic|grey|upload|scraped)$"),
+    min_relevance: float = Query(0.0, ge=0.0, le=1.0),
+) -> dict:
+    async with database.get_conn() as conn:
+        return database.count_sources_for_query(
+            conn, query_id, source_type=source_type, min_relevance=min_relevance,
+        )
+
+
 @router.get("/results/{query_id}", response_model=list[SourceOut])
 async def get_results(
     query_id: str,
