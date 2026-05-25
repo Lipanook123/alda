@@ -203,6 +203,7 @@ const state = {
   jobId:          null,
   pollInterval:   null,
   pollErrorCount: 0,
+  pollInFlight:   false,
   resultsPage:    1,
   pendingFile:    null,
   defaultMaxResults: 500,
@@ -919,11 +920,15 @@ async function startSearch() {
 
 function startPolling() {
   if (state.pollInterval) clearInterval(state.pollInterval);
+  state.pollErrorCount = 0;
+  state.pollInFlight = false;
   state.pollInterval = setInterval(pollStatus, 2000);
 }
 
 async function pollStatus() {
-  if (!state.jobId) return;
+  if (!state.jobId || state.pollInFlight) return;
+  if (document.visibilityState === "hidden") return;
+  state.pollInFlight = true;
   try {
     const job = await api("GET", `/api/v1/search/status/${state.jobId}`);
     state.pollErrorCount = 0;
@@ -975,8 +980,23 @@ async function pollStatus() {
       showStatus("search-status-msg",
         `Connection issue (attempt ${state.pollErrorCount}/5): ${e.message}`, "error");
     }
+  } finally {
+    state.pollInFlight = false;
   }
 }
+
+// Resume polling when browser tab becomes visible again (e.g. after phone lock)
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !state.jobId) return;
+  if (state.pollInterval) {
+    // Active poll: reset error count so a brief network blip on wake doesn't kill it
+    state.pollErrorCount = 0;
+    state.pollInFlight = false;
+  } else {
+    // Polling was stopped (too many errors while hidden) — auto-reconnect
+    retryPoll();
+  }
+});
 
 function retryPoll() {
   if (!state.jobId) return;
