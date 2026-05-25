@@ -266,6 +266,8 @@ async function checkHealth() {
       // Mark setup complete so wizard doesn't reappear (covers env-var configuration)
       localStorage.setItem("alda_setup_done", "true");
       localStorage.removeItem("alda_setup_skipped");
+      // Close wizard if it was showing while the health check ran
+      document.getElementById("setup-modal").classList.add("hidden");
       updateTokenEstimate();
     }
   } catch (e) {
@@ -1322,6 +1324,7 @@ function init() {
   loadSettings();
   initTabs();
   initSetupWizard();
+  showSetupIfNeeded();   // show immediately, before the async health check
   initMission();
   initSearch();
   initResults();
