@@ -888,8 +888,139 @@ details[open] > summary::before { transform: rotate(90deg); }
 #token-budget-dollars { width: 90px; margin: 0; padding: var(--sp-1) var(--sp-2); }
 
 /* ============================================================================
+   SEARCH LAUNCH ROW (max results + start button)
+   ============================================================================ */
+
+.search-launch-row {
+  margin-bottom: var(--sp-6);
+  padding: var(--sp-4) var(--sp-5);
+  border: var(--alda-border-width) solid var(--alda-border);
+  border-radius: var(--alda-radius-md);
+  background: var(--alda-bg-subtle);
+}
+
+.search-config-item {
+  margin-bottom: var(--sp-4);
+}
+
+.search-config-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: var(--sp-2);
+}
+
+/* ============================================================================
    SEARCH PROGRESS
    ============================================================================ */
+
+.alda-search-progress {
+  margin-bottom: var(--sp-6);
+  padding: var(--sp-4) var(--sp-5);
+  border: var(--alda-border-width) solid var(--alda-border);
+  border-radius: var(--alda-radius-md);
+  background: var(--alda-bg-subtle);
+}
+
+.search-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.search-progress-status {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.search-pass-label {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.search-total-count {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--alda-accent);
+}
+
+.search-updated-at {
+  font-size: 0.78rem;
+  color: var(--alda-text-muted);
+  white-space: nowrap;
+}
+
+.search-lm-note {
+  margin-top: var(--sp-3);
+  font-size: 0.8rem;
+  color: var(--alda-text-muted);
+}
+
+/* Per-source progress grid */
+.source-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+.spi {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-2);
+  border: 1px solid var(--alda-border);
+  border-radius: var(--alda-radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--alda-bg);
+  font-size: 0.8rem;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.spi.searching {
+  border-color: #aaa;
+  background: var(--alda-bg);
+}
+
+.spi.has-results {
+  border-color: var(--alda-success);
+  background: var(--alda-success-bg);
+}
+
+.spi-name {
+  color: var(--alda-text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spi-count {
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.spi-count.nonzero { color: var(--alda-success); }
+.spi-count.zero    { color: var(--alda-text-muted); font-weight: 400; }
+
+.spi-count.searching {
+  color: var(--alda-text-muted);
+  font-weight: 400;
+  font-style: italic;
+  animation: spi-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes spi-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
 
 .alda-progress-bar {
   width: 100%;

@@ -219,9 +219,23 @@
       </div>
 
       <div id="search-form">
-        <div class="alda-btn-row" style="margin-bottom:1.5rem">
-          <button id="btn-search" class="alda-btn alda-btn-primary alda-btn-lg">Start Search</button>
-          <span id="search-status-msg" class="alda-status-msg"></span>
+
+        <!-- Max results + start button -->
+        <div class="search-launch-row">
+          <div class="search-config-item">
+            <span class="search-config-label">Maximum results</span>
+            <div class="results-options" id="search-max-results-pills">
+              <button type="button" class="results-opt" data-val="200">200</button>
+              <button type="button" class="results-opt active" data-val="500">500</button>
+              <button type="button" class="results-opt" data-val="1000">1 000</button>
+              <button type="button" class="results-opt" data-val="2000">2 000</button>
+              <button type="button" class="results-opt" data-val="0">Unlimited</button>
+            </div>
+          </div>
+          <div class="alda-btn-row">
+            <button id="btn-search" class="alda-btn alda-btn-primary alda-btn-lg">Start Search</button>
+            <span id="search-status-msg" class="alda-status-msg"></span>
+          </div>
         </div>
 
         <!-- Language model cost estimate -->
@@ -240,12 +254,19 @@
         </div>
 
         <!-- Progress (shown during search) -->
-        <div id="search-progress" class="hidden" style="margin-bottom:1.5rem">
+        <div id="search-progress" class="alda-search-progress hidden">
+          <div class="search-progress-header">
+            <div class="search-progress-status">
+              <span id="search-pass-label" class="search-pass-label">Starting…</span>
+              <span id="search-total-count" class="search-total-count"></span>
+            </div>
+            <span id="search-updated-at" class="search-updated-at"></span>
+          </div>
           <div class="alda-progress-bar">
             <div id="search-progress-fill" class="alda-progress-fill" style="width:0%"></div>
           </div>
-          <div id="search-stats" class="search-stats"></div>
-          <div id="source-breakdown" style="margin-top:0.5rem"></div>
+          <div id="source-progress-grid" class="source-progress-grid"></div>
+          <div id="search-lm-note" class="search-lm-note"></div>
         </div>
 
         <!-- Advanced options -->

@@ -199,14 +199,16 @@ const state = {
   searchHistory: JSON.parse(localStorage.getItem("alda_search_history") || "[]"),
 
   // Session-only
-  queryId:        null,
-  jobId:          null,
-  pollInterval:   null,
-  pollErrorCount: 0,
-  resultsPage:    1,
-  pendingFile:    null,
+  queryId:           null,
+  jobId:             null,
+  pollInterval:      null,
+  pollErrorCount:    0,
+  resultsPage:       1,
+  pendingFile:       null,
   defaultMaxResults: 500,
-  maxResults:     200,
+  maxResults:        200,
+  searchMaxResults:  500,    // controlled by the pill row on the search panel
+  selectedSources:   [],     // sources checked when the current search started
 
   // Derived from health check
   lmProvider: null,
@@ -878,6 +880,33 @@ function budgetToTokens(dollars) {
 function initSearch() {
   document.getElementById("btn-search")?.addEventListener("click", startSearch);
   document.getElementById("use-lm")?.addEventListener("change", updateTokenEstimate);
+
+  // Wire max-results pills on the search panel
+  document.querySelectorAll("#search-max-results-pills .results-opt").forEach(pill => {
+    pill.addEventListener("click", () => {
+      document.querySelectorAll("#search-max-results-pills .results-opt")
+        .forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      state.searchMaxResults = parseInt(pill.dataset.val) || 0;
+      updateTokenEstimate();
+    });
+  });
+  // Sync pills to current default
+  syncSearchMaxResultsPills();
+}
+
+function syncSearchMaxResultsPills() {
+  state.searchMaxResults = state.defaultMaxResults;
+  const pills = document.querySelectorAll("#search-max-results-pills .results-opt");
+  const vals = [...pills].map(p => parseInt(p.dataset.val));
+  const match = vals.includes(state.defaultMaxResults);
+  pills.forEach(p => {
+    p.classList.toggle("active", match && parseInt(p.dataset.val) === state.defaultMaxResults);
+  });
+  // If no exact match (custom value), activate Unlimited as fallback
+  if (!match) {
+    pills[pills.length - 1]?.classList.add("active");
+  }
 }
 
 async function startSearch() {
@@ -893,6 +922,7 @@ async function startSearch() {
   const useLm = document.getElementById("use-lm")?.checked ?? true;
   const budgetDollars = parseFloat(document.getElementById("token-budget-dollars")?.value) || 0;
   const maxTokenBudget = budgetDollars > 0 ? budgetToTokens(budgetDollars) : null;
+  state.selectedSources = sources;
 
   showStatus("search-status-msg", "Starting…");
   try {
@@ -901,7 +931,7 @@ async function startSearch() {
       sources,
       use_llm_relevance: useLm,
       max_token_budget: maxTokenBudget,
-      max_results: state.defaultMaxResults || null,
+      max_results: state.searchMaxResults || null,
     });
     state.jobId = result.job_id;
     state.pollErrorCount = 0;
@@ -919,7 +949,8 @@ async function startSearch() {
 
 function startPolling() {
   if (state.pollInterval) clearInterval(state.pollInterval);
-  state.pollInterval = setInterval(pollStatus, 2000);
+  pollStatus(); // immediate first poll, then every 5s
+  state.pollInterval = setInterval(pollStatus, 5000);
 }
 
 async function pollStatus() {
@@ -990,41 +1021,78 @@ function retryPoll() {
 
 function updateProgress(job) {
   const p = job.progress;
-  const pct = Math.min(
-    Math.round((p.total_sources_found / Math.max(p.total_sources_found + 20, 100)) * 100),
-    95,
-  );
+  const isRunning = job.status === "running" || job.status === "pending";
+  const maxIter = 5;
+
+  // Progress bar: iteration-based while running, 100% when done
+  const pct = isRunning
+    ? Math.min(((p.current_iteration - 1) / maxIter) * 100 + 8, 92)
+    : 100;
   const fill = document.getElementById("search-progress-fill");
   if (fill) fill.style.width = pct + "%";
 
-  const label = JOB_STATUS_LABELS[job.status] || job.status;
-  const newNote = p.new_this_iteration > 0
-    ? ` — ${p.new_this_iteration} new this pass`
-    : " — no new sources this pass (wrapping up…)";
-  const statsEl = document.getElementById("search-stats");
-  if (statsEl) statsEl.innerHTML =
-    `<strong>${label}</strong> — Found <strong>${p.total_sources_found}</strong> sources so far${newNote}.`;
-
-  const breakdown = Object.entries(p.source_breakdown || {})
-    .filter(([, v]) => v > 0)
-    .map(([k, v]) => `<span class="source-tag">${SOURCE_NAMES[k] || k}: ${v}</span>`)
-    .join(" ");
-
-  let tokenNote = "";
-  if (p.tokens_used > 0) {
-    const key = `${state.lmProvider}/${state.lmModel}`;
-    const pricing = TOKEN_PRICING[key];
-    if (pricing) {
-      const cost = (p.tokens_used / 1000) * ((pricing[0] + pricing[1]) / 2);
-      tokenNote = ` · Language model scoring: ${p.tokens_used.toLocaleString()} tokens (~$${cost < 0.01 ? "<0.01" : cost.toFixed(2)})`;
+  // Pass label
+  const passEl = document.getElementById("search-pass-label");
+  if (passEl) {
+    if (!isRunning) {
+      passEl.textContent = JOB_STATUS_LABELS[job.status] || job.status;
+    } else if (p.current_iteration > 0) {
+      const newNote = p.new_this_iteration > 0
+        ? ` · ${p.new_this_iteration} new this pass`
+        : p.current_iteration > 1 ? " · wrapping up…" : "";
+      passEl.textContent = `Pass ${p.current_iteration} of ${maxIter}${newNote}`;
     } else {
-      tokenNote = ` · Language model scoring: ${p.tokens_used.toLocaleString()} tokens used`;
+      passEl.textContent = "Starting…";
     }
   }
 
-  const breakdownEl = document.getElementById("source-breakdown");
-  if (breakdownEl) breakdownEl.innerHTML =
-    breakdown + (tokenNote ? `<div class="alda-status-msg" style="margin-top:0.3rem;font-size:0.8rem">${tokenNote}</div>` : "");
+  // Total count
+  const countEl = document.getElementById("search-total-count");
+  if (countEl) {
+    const n = p.total_sources_found;
+    countEl.textContent = n > 0 ? `${n.toLocaleString()} source${n !== 1 ? "s" : ""} found` : "";
+  }
+
+  // Last updated timestamp
+  const updEl = document.getElementById("search-updated-at");
+  if (updEl) updEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+
+  // Per-source progress grid
+  const grid = document.getElementById("source-progress-grid");
+  if (grid) {
+    const breakdown = p.source_breakdown || {};
+    const sources = state.selectedSources.length ? state.selectedSources : Object.keys(breakdown);
+    grid.innerHTML = sources.map(src => {
+      const name = SOURCE_NAMES[src] || src;
+      const count = breakdown[src];
+      const hasResult = count !== undefined;
+      const stateClass = !hasResult && isRunning ? "searching" : hasResult && count > 0 ? "has-results" : "done";
+      const countHtml = !hasResult && isRunning
+        ? `<span class="spi-count searching">searching…</span>`
+        : `<span class="spi-count ${count > 0 ? "nonzero" : "zero"}">${(count || 0).toLocaleString()}</span>`;
+      return `<div class="spi ${stateClass}">
+        <span class="spi-name">${esc(name)}</span>
+        ${countHtml}
+      </div>`;
+    }).join("");
+  }
+
+  // Language model cost note
+  const lmNote = document.getElementById("search-lm-note");
+  if (lmNote) {
+    if (p.tokens_used > 0) {
+      const key = `${state.lmConfig?.provider}/${state.lmConfig?.model}`;
+      const pricing = TOKEN_PRICING[key];
+      let costStr = "";
+      if (pricing) {
+        const cost = (p.tokens_used / 1000) * ((pricing[0] + pricing[1]) / 2);
+        costStr = ` · ~$${cost < 0.01 ? "<0.01" : cost.toFixed(2)}`;
+      }
+      lmNote.textContent = `Language model scoring: ${p.tokens_used.toLocaleString()} tokens${costStr}`;
+    } else {
+      lmNote.textContent = "";
+    }
+  }
 }
 
 // ──────────────────────────────────────────────
