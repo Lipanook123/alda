@@ -900,6 +900,7 @@ details[open] > summary::before { transform: rotate(90deg); }
   border-radius: var(--alda-radius-full);
   overflow: hidden;
   margin-bottom: var(--sp-3);
+  position: relative;
 }
 .alda-progress-fill {
   height: 100%;
@@ -907,12 +908,58 @@ details[open] > summary::before { transform: rotate(90deg); }
   transition: width 0.4s ease;
   min-width: 4px;
 }
+.alda-progress-fill.indeterminate {
+  position: absolute;
+  width: 40%;
+  transition: none;
+  animation: progress-slide 1.5s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0%   { left: -40%; }
+  100% { left: 140%; }
+}
 
 .search-stats {
   font-size: 0.9rem;
   color: var(--alda-text);
   margin: var(--sp-2) 0;
 }
+
+/* Per-source status tiles */
+.source-status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--sp-3);
+}
+.src-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: var(--alda-radius-sm);
+  border: 1px solid var(--alda-border);
+  background: var(--alda-bg-subtle);
+  white-space: nowrap;
+}
+.src-tile.has-results {
+  border-color: var(--alda-success);
+  background: var(--alda-success-bg);
+}
+.src-tile-count {
+  font-weight: 700;
+  color: var(--alda-success);
+}
+.src-tile-waiting {
+  color: var(--alda-text-muted);
+  animation: tile-pulse 1.4s ease-in-out infinite;
+}
+@keyframes tile-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
 .source-tag {
   display: inline-block;
   background: var(--alda-bg-tertiary);
