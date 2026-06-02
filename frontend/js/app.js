@@ -911,6 +911,10 @@ async function startSearch() {
     document.getElementById("search-progress")?.classList.remove("hidden");
     const btn = document.getElementById("btn-search");
     if (btn) { btn.disabled = true; btn.textContent = "Searching…"; }
+    // Show animated progress immediately before the first poll returns
+    updateProgress({ job_id: result.job_id, query_id: state.queryId, status: "pending",
+      progress: { total_sources_found: 0, new_this_iteration: 0, current_iteration: 0,
+        source_breakdown: {}, tokens_used: 0, saturation_reached: false } });
     startPolling();
     showStatus("search-status-msg", "");
   } catch (e) {
@@ -1146,25 +1150,58 @@ function retryPoll() {
 
 function updateProgress(job) {
   const p = job.progress;
-  const pct = Math.min(
-    Math.round((p.total_sources_found / Math.max(p.total_sources_found + 20, 100)) * 100),
-    95,
-  );
+  const isActive = job.status === "pending" || job.status === "running";
+  const hasResults = p.total_sources_found > 0;
+
+  // Progress bar — indeterminate slide while no results yet, real fill once results arrive
   const fill = document.getElementById("search-progress-fill");
-  if (fill) fill.style.width = pct + "%";
+  if (fill) {
+    if (isActive && !hasResults) {
+      fill.classList.add("indeterminate");
+      fill.style.width = "";
+    } else {
+      fill.classList.remove("indeterminate");
+      const pct = Math.min(
+        Math.round((p.total_sources_found / Math.max(p.total_sources_found + 20, 100)) * 100),
+        95,
+      );
+      fill.style.width = pct + "%";
+    }
+  }
 
+  // Status text
   const label = JOB_STATUS_LABELS[job.status] || job.status;
-  const newNote = p.new_this_iteration > 0
-    ? ` — ${p.new_this_iteration} new this pass`
-    : " — no new sources this pass (wrapping up…)";
   const statsEl = document.getElementById("search-stats");
-  if (statsEl) statsEl.innerHTML =
-    `<strong>${label}</strong> — Found <strong>${p.total_sources_found}</strong> sources so far${newNote}.`;
+  if (statsEl) {
+    if (!hasResults && isActive) {
+      const n = document.querySelectorAll('input[name="source"]:checked').length;
+      statsEl.innerHTML = `<strong>${label}</strong> — Searching across ${n} database${n !== 1 ? "s" : ""}…`;
+    } else if (hasResults) {
+      const passNote = p.current_iteration > 0 ? ` · Pass ${p.current_iteration}` : "";
+      const newNote = p.new_this_iteration > 0
+        ? ` · ${p.new_this_iteration} new this pass`
+        : isActive ? " · checking for more…" : "";
+      statsEl.innerHTML =
+        `<strong>${label}</strong>${passNote} — <strong>${p.total_sources_found}</strong> sources found${newNote}.`;
+    } else {
+      statsEl.innerHTML = `<strong>${label}</strong>`;
+    }
+  }
 
-  const breakdown = Object.entries(p.source_breakdown || {})
-    .filter(([, v]) => v > 0)
-    .map(([k, v]) => `<span class="source-tag">${SOURCE_NAMES[k] || k}: ${v}</span>`)
-    .join(" ");
+  // Per-source tile grid — all selected sources shown; results highlighted, others pulsing
+  const selected = [...document.querySelectorAll('input[name="source"]:checked')].map(el => el.value);
+  const bd = p.source_breakdown || {};
+  const tiles = selected.map(src => {
+    const name = SOURCE_NAMES[src] || src;
+    const count = bd[src] ?? null;
+    if (count > 0) {
+      return `<span class="src-tile has-results">${esc(name)}<span class="src-tile-count">${count}</span></span>`;
+    }
+    if (isActive) {
+      return `<span class="src-tile">${esc(name)}<span class="src-tile-waiting">…</span></span>`;
+    }
+    return `<span class="src-tile">${esc(name)}<span class="src-tile-count" style="color:var(--alda-text-muted)">0</span></span>`;
+  }).join("");
 
   let tokenNote = "";
   if (p.tokens_used > 0) {
@@ -1172,15 +1209,15 @@ function updateProgress(job) {
     const pricing = TOKEN_PRICING[key];
     if (pricing) {
       const cost = (p.tokens_used / 1000) * ((pricing[0] + pricing[1]) / 2);
-      tokenNote = ` · Language model scoring: ${p.tokens_used.toLocaleString()} tokens (~$${cost < 0.01 ? "<0.01" : cost.toFixed(2)})`;
+      tokenNote = `<div class="alda-status-msg" style="margin-top:0.3rem;font-size:0.8rem">Language model scoring: ${p.tokens_used.toLocaleString()} tokens (~$${cost < 0.01 ? "<0.01" : cost.toFixed(2)})</div>`;
     } else {
-      tokenNote = ` · Language model scoring: ${p.tokens_used.toLocaleString()} tokens used`;
+      tokenNote = `<div class="alda-status-msg" style="margin-top:0.3rem;font-size:0.8rem">Language model scoring: ${p.tokens_used.toLocaleString()} tokens used</div>`;
     }
   }
 
   const breakdownEl = document.getElementById("source-breakdown");
   if (breakdownEl) breakdownEl.innerHTML =
-    breakdown + (tokenNote ? `<div class="alda-status-msg" style="margin-top:0.3rem;font-size:0.8rem">${tokenNote}</div>` : "");
+    (tiles ? `<div class="source-status-grid">${tiles}</div>` : "") + tokenNote;
 }
 
 // ──────────────────────────────────────────────
