@@ -971,6 +971,12 @@ async function pollStatus() {
       clearInterval(state.pollInterval);
       state.pollInterval = null;
       wakeAndResume();
+    } else if (e.message === "Job not found") {
+      // Server is up but has no memory of this job (restart wiped _jobs).
+      // Check if results were already saved and recover silently.
+      clearInterval(state.pollInterval);
+      state.pollInterval = null;
+      recoverFromLostJob();
     } else if (state.pollErrorCount >= 5) {
       clearInterval(state.pollInterval);
       state.pollInterval = null;
@@ -987,6 +993,38 @@ async function pollStatus() {
     }
   } finally {
     state.pollInFlight = false;
+  }
+}
+
+async function recoverFromLostJob() {
+  if (!state.queryId) return;
+  showStatus("search-status-msg", "Server restarted — checking for saved results…");
+  appLog("info", "Job not found in server memory — checking DB for results", state.queryId);
+  try {
+    const counts = await api("GET", `/api/v1/search/results/${state.queryId}/count`);
+    const btn = document.getElementById("btn-search");
+    if (counts.total > 0) {
+      appLog("info", "Recovered results after server restart", `${counts.total} sources found`);
+      if (state.currentQuery) {
+        saveCurrentQuery({ ...state.currentQuery, status: "complete", result_count: counts.total });
+      }
+      setStepState("brief", "done");
+      setStepState("search", "done");
+      setStepState("results", "active");
+      if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
+      showStatus("search-status-msg",
+        `Found ${counts.total} saved result${counts.total !== 1 ? "s" : ""} — going to results…`, "success");
+      setTimeout(() => { showStep("results"); loadResults(true); }, 900);
+    } else {
+      appLog("error", "Server restarted and no results were saved", "search will need to be re-run");
+      if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
+      const statusEl = document.getElementById("search-status-msg");
+      if (statusEl) statusEl.innerHTML =
+        `<span class="alda-status-msg error">Server restarted and the search was lost (no results saved). </span>` +
+        `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="startSearch()">Re-run search</button>`;
+    }
+  } catch (_) {
+    showStatus("search-status-msg", "Server restarted — could not recover results.", "error");
   }
 }
 
@@ -1673,6 +1711,7 @@ Object.assign(window, {
   startSearch,
   retryPoll,
   wakeAndResume,
+  recoverFromLostJob,
   // Results
   loadResults,
   // Upload
