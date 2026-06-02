@@ -150,11 +150,11 @@ def count_sources_for_query(conn, query_id: str, source_type: str = "all",
     total_where = "ql.query_id = ?"
 
     filtered = conn.execute(
-        f"SELECT COUNT(*) FROM sources s JOIN query_logs ql ON s.id = ql.source_id WHERE {where}",
+        f"SELECT COUNT(DISTINCT s.id) FROM sources s JOIN query_logs ql ON s.id = ql.source_id WHERE {where}",
         params,
     ).fetchone()[0]
     total = conn.execute(
-        f"SELECT COUNT(*) FROM sources s JOIN query_logs ql ON s.id = ql.source_id WHERE {total_where}",
+        f"SELECT COUNT(DISTINCT s.id) FROM sources s JOIN query_logs ql ON s.id = ql.source_id WHERE {total_where}",
         total_params,
     ).fetchone()[0]
     return {"filtered": filtered, "total": total}
@@ -186,7 +186,7 @@ def get_sources_for_query(conn, query_id: str, page: int = 1, page_size: int = 5
 
     rows = conn.execute(
         f"""
-        SELECT s.id, s.title, s.authors, s.year, s.doi, s.url, s.abstract,
+        SELECT DISTINCT s.id, s.title, s.authors, s.year, s.doi, s.url, s.abstract,
                s.venue, s.citation_count, s.source_type, s.relevance,
                s.themes, s.metadata, s.created_at
         FROM sources s
@@ -209,9 +209,10 @@ def get_all_source_ids(conn) -> set[str]:
     return {r[0] for r in rows}
 
 
-def get_all_source_dois(conn) -> set[str]:
-    rows = conn.execute("SELECT doi FROM sources WHERE doi IS NOT NULL").fetchall()
-    return {r[0].lower() for r in rows}
+def get_all_source_dois(conn) -> dict[str, str]:
+    """Return {normalized_doi: source_id} for all sources with a DOI."""
+    rows = conn.execute("SELECT id, doi FROM sources WHERE doi IS NOT NULL").fetchall()
+    return {r[1].lower(): r[0] for r in rows}
 
 
 def get_all_sources_brief(conn) -> list[dict]:

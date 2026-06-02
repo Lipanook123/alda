@@ -1269,12 +1269,22 @@ async function loadResults(reset = false) {
       api("GET",
         `/api/v1/search/results/${state.queryId}/count` +
         `?source_type=${type}&min_relevance=${minRel}`
-      ),
+      ).catch(err => {
+        appLog("warn", "Count endpoint failed (non-fatal)", err.message);
+        return { filtered: null, total: null };
+      }),
     ]);
+
+    appLog("info", "Results loaded",
+      `sources=${sources.length}, filtered=${counts.filtered}, total=${counts.total}, queryId=${state.queryId}`);
 
     if (reset) document.getElementById("results-list").innerHTML = "";
 
-    if (!counts.total && state.resultsPage === 1) {
+    // Determine whether there are any results at all for this query (unfiltered).
+    // Prefer what the count endpoint says; fall back to sources.length if count failed.
+    const hasAnyResults = counts.total > 0 || sources.length > 0;
+
+    if (!hasAnyResults && state.resultsPage === 1) {
       document.getElementById("results-list").innerHTML = `
         <div class="empty-state">
           <p>No results yet.</p>
@@ -1287,6 +1297,7 @@ async function loadResults(reset = false) {
     }
 
     if (!sources.length && state.resultsPage === 1) {
+      const totalLabel = counts.total != null ? counts.total : "?";
       document.getElementById("results-list").innerHTML = `
         <div class="empty-state">
           <p>No results match your current filters.</p>
@@ -1294,19 +1305,21 @@ async function loadResults(reset = false) {
             onclick="document.getElementById('btn-clear-filters').click()">Clear filters</button>
         </div>`;
       document.getElementById("results-count").textContent =
-        `0 of ${counts.total} result${counts.total !== 1 ? "s" : ""}`;
+        `0 of ${totalLabel} result${counts.total !== 1 ? "s" : ""}`;
       document.getElementById("load-more-row").style.display = "none";
       return;
     }
 
-    const shown = (state.resultsPage - 1) * pageSize + sources.length;
+    const total    = counts.total    ?? sources.length;
+    const filtered = counts.filtered ?? sources.length;
+    const shown    = (state.resultsPage - 1) * pageSize + sources.length;
     document.getElementById("results-count").textContent = filtersActive
-      ? `${counts.filtered} of ${counts.total} result${counts.total !== 1 ? "s" : ""} (filtered)`
-      : `${counts.total} result${counts.total !== 1 ? "s" : ""}`;
+      ? `${filtered} of ${total} result${total !== 1 ? "s" : ""} (filtered)`
+      : `${total} result${total !== 1 ? "s" : ""}`;
 
     const cards = sources.map(renderSourceCard).join("");
     document.getElementById("results-list").insertAdjacentHTML("beforeend", cards);
-    document.getElementById("load-more-row").style.display = shown < counts.filtered ? "flex" : "none";
+    document.getElementById("load-more-row").style.display = shown < filtered ? "flex" : "none";
 
     document.querySelectorAll(".result-abstract").forEach(el => {
       el.addEventListener("click", () => el.classList.toggle("expanded"));

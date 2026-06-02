@@ -46,7 +46,7 @@ async def upload_file(
         existing_dois = database.get_all_source_dois(conn)
         existing_titles = database.get_all_sources_brief(conn)
 
-    unique_sources, dup_count = deduplicate(sources, existing_dois, existing_titles)
+    unique_sources, dup_count, existing_db_ids = deduplicate(sources, existing_dois, existing_titles)
 
     inserted = 0
     async with database.get_conn() as conn:
@@ -56,6 +56,9 @@ async def upload_file(
             if query_id:
                 database.insert_query_log(conn, query_id, src_dict["id"])
             inserted += 1
+        if query_id:
+            for src_id in existing_db_ids:
+                database.insert_query_log(conn, query_id, src_id)
 
     return UploadResult(
         records_parsed=len(sources),

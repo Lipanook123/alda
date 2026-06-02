@@ -118,8 +118,10 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
 
         candidates = academic_results + grey_results
 
-        # Deduplicate
-        unique_candidates, dup_count = deduplicate(candidates, existing_dois, existing_titles)
+        # Deduplicate — also returns IDs of sources already in DB that match
+        unique_candidates, dup_count, existing_db_ids = deduplicate(
+            candidates, existing_dois, existing_titles
+        )
         total_duplicates += dup_count
 
         # Language detection + title/abstract translation for non-English content
@@ -160,13 +162,17 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
                 database.insert_source(conn, src_dict)
                 database.insert_query_log(conn, query_id, src_dict["id"], matched=True, score=src.relevance)
                 inserted_this_iter += 1
+            # Link DB-duplicate sources to this query so they appear in results
+            for src_id in existing_db_ids:
+                database.insert_query_log(conn, query_id, src_id, matched=True)
 
-        total_inserted += inserted_this_iter
-        iteration_new_counts.append(inserted_this_iter)
+        linked_this_iter = inserted_this_iter + len(existing_db_ids)
+        total_inserted += linked_this_iter
+        iteration_new_counts.append(linked_this_iter)
 
         # Update progress
         job.progress.total_sources_found = total_inserted
-        job.progress.new_this_iteration = inserted_this_iter
+        job.progress.new_this_iteration = linked_this_iter
         job.progress.duplicates_removed = total_duplicates
         # Track per-source breakdown
         for src in unique_candidates:
