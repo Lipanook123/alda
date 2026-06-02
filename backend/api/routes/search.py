@@ -1,9 +1,13 @@
+import logging
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from backend.agent import orchestrator
-from backend.api.models import SearchJobRequest, SearchJobStatus, SourceOut
+from backend.api.models import SearchJobRequest, SearchJobStatus, SearchProgress, SourceOut
 from backend.db import database
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/search", tags=["search"])
 
 
@@ -16,6 +20,8 @@ async def start_search(body: SearchJobRequest, background_tasks: BackgroundTasks
         raise HTTPException(status_code=404, detail="Query not found. Parse a mission brief first.")
 
     job = orchestrator.create_job(body.query_id)
+    async with database.get_conn() as conn:
+        database.set_query_job_id(conn, body.query_id, job.job_id)
     background_tasks.add_task(orchestrator.run_search, job.job_id, body)
     return {"job_id": job.job_id, "status": "pending"}
 
@@ -23,9 +29,36 @@ async def start_search(body: SearchJobRequest, background_tasks: BackgroundTasks
 @router.get("/status/{job_id}", response_model=SearchJobStatus)
 async def get_status(job_id: str) -> SearchJobStatus:
     job = orchestrator.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    if job:
+        return job
+
+    # In-memory miss — server may have restarted. Fall back to DB.
+    async with database.get_conn() as conn:
+        query_row = database.get_query_by_job_id(conn, job_id)
+        if not query_row:
+            raise HTTPException(status_code=404, detail="Job not found")
+        counts = database.count_sources_for_query(conn, query_row["id"])
+
+    live_count = counts["total"]
+    db_status = query_row.get("status") or "failed"
+
+    # If the server died mid-search, treat as complete when results were saved
+    if db_status == "running":
+        recovered_status = "complete" if live_count > 0 else "failed"
+        log.info("Recovered job %s from DB: db_status=running, live_count=%d → %s",
+                 job_id, live_count, recovered_status)
+    else:
+        recovered_status = db_status
+
+    ts = query_row.get("timestamp") or datetime.now(timezone.utc)
+    return SearchJobStatus(
+        job_id=job_id,
+        query_id=query_row["id"],
+        status=recovered_status,
+        progress=SearchProgress(total_sources_found=live_count),
+        created_at=ts,
+        updated_at=datetime.now(timezone.utc),
+    )
 
 
 @router.get("/results/{query_id}/count")

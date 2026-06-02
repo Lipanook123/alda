@@ -18,6 +18,8 @@ async def init_db(path: Path) -> None:
     _conn = duckdb.connect(str(path))
     for sql in ALL_TABLES:
         _conn.execute(sql)
+    # Live migration: add job_id column if this is an existing database
+    _conn.execute("ALTER TABLE queries ADD COLUMN IF NOT EXISTS job_id TEXT")
     _lock = asyncio.Lock()
 
 
@@ -103,6 +105,21 @@ def update_query_status(conn, query_id: str, status: str, results_count: int | N
         "UPDATE queries SET status = ?, results_count = ? WHERE id = ?",
         [status, results_count, query_id],
     )
+
+
+def set_query_job_id(conn, query_id: str, job_id: str) -> None:
+    conn.execute("UPDATE queries SET job_id = ? WHERE id = ?", [job_id, query_id])
+
+
+def get_query_by_job_id(conn, job_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT id, query_text, search_strategy, timestamp, results_count, status, job_id "
+        "FROM queries WHERE job_id = ?",
+        [job_id],
+    ).fetchone()
+    if not row:
+        return None
+    return dict(zip(["id", "query_text", "search_strategy", "timestamp", "results_count", "status", "job_id"], row))
 
 
 def insert_query_log(conn, query_id: str, source_id: str, matched: bool = True, score: float | None = None) -> None:

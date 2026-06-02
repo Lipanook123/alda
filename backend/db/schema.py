@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS queries (
     search_strategy TEXT,
     timestamp       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     results_count   INTEGER,
-    status          TEXT
+    status          TEXT,
+    job_id          TEXT
 )
 """
 
