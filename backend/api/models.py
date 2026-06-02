@@ -129,6 +129,9 @@ class ExportRequest(BaseModel):
     query_id: str | None = None
     format: Literal["csv", "json"] = "csv"
     include_fields: list[str] | None = None
+    source_type: str = "all"
+    min_relevance: float = 0.0
+    sort_by: str = "relevance"
 
 
 # ---------------------------------------------------------------------------

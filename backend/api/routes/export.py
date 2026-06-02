@@ -14,9 +14,14 @@ router = APIRouter(prefix="/export", tags=["export"])
 async def export_sources(body: ExportRequest):
     async with database.get_conn() as conn:
         if body.query_id:
-            rows = database.get_sources_for_query(conn, body.query_id, page=1, page_size=10000)
+            rows = database.get_sources_for_query(
+                conn, body.query_id, page=1, page_size=10000,
+                sort_by=body.sort_by,
+                source_type=body.source_type,
+                min_relevance=body.min_relevance,
+            )
         else:
-            # All sources
+            # All sources — no filter params apply when exporting everything
             raw = conn.execute(
                 """SELECT id, title, authors, year, doi, url, abstract, venue,
                    citation_count, source_type, relevance, themes, metadata, created_at

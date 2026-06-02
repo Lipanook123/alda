@@ -605,6 +605,7 @@ function showSubTab(name) {
   document.querySelectorAll(".alda-sub-panel").forEach(panel => {
     panel.classList.toggle("hidden", panel.id !== `sub-${name}`);
   });
+  if (name === "export") updateExportFilterSummary();
 }
 
 // ──────────────────────────────────────────────
@@ -1440,13 +1441,42 @@ async function doUpload() {
 function initExport() {
   document.getElementById("btn-export")?.addEventListener("click", doExport);
   document.getElementById("btn-prisma")?.addEventListener("click", loadPrisma);
+  document.getElementById("export-apply-filters")?.addEventListener("change", updateExportFilterSummary);
+}
+
+function updateExportFilterSummary() {
+  const applyEl  = document.getElementById("export-apply-filters");
+  const summaryEl = document.getElementById("export-filter-summary");
+  if (!summaryEl) return;
+  if (!applyEl?.checked) {
+    summaryEl.textContent = "Exports all results for this search.";
+    return;
+  }
+  const type   = document.getElementById("filter-type")?.value || "all";
+  const minRel = parseInt(document.getElementById("filter-relevance")?.value || "0", 10);
+  const sort   = document.getElementById("filter-sort")?.value || "relevance";
+  const parts = [];
+  if (type !== "all") parts.push(type === "academic" ? "academic papers only" : type === "grey" ? "web sources only" : "uploaded sources only");
+  if (minRel > 0)     parts.push(`relevance ≥ ${minRel}%`);
+  if (sort !== "relevance") parts.push(`sorted by ${sort.replace("_", " ")}`);
+  summaryEl.textContent = parts.length
+    ? `Filters: ${parts.join(", ")}.`
+    : "No filters active — exports all results for this search.";
 }
 
 async function doExport() {
-  const fmt = document.querySelector('input[name="export-format"]:checked')?.value || "csv";
-  const currentOnly = document.getElementById("export-current-query")?.checked ?? true;
+  const fmt          = document.querySelector('input[name="export-format"]:checked')?.value || "csv";
+  const currentOnly  = document.getElementById("export-current-query")?.checked ?? true;
+  const applyFilters = document.getElementById("export-apply-filters")?.checked ?? true;
+
   const body = { format: fmt };
   if (currentOnly && state.queryId) body.query_id = state.queryId;
+
+  if (applyFilters && state.queryId) {
+    body.source_type   = document.getElementById("filter-type")?.value || "all";
+    body.min_relevance = (parseInt(document.getElementById("filter-relevance")?.value || "0", 10)) / 100;
+    body.sort_by       = document.getElementById("filter-sort")?.value || "relevance";
+  }
 
   const btn = document.getElementById("btn-export");
   btn.disabled = true;

@@ -1,5 +1,6 @@
+import asyncio
+import logging
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
@@ -7,6 +8,8 @@ from backend.api.models import ThemeOut
 from backend.config import settings
 from backend.db import database
 from backend.output.generator import cluster_by_keywords
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/themes", tags=["themes"])
 
@@ -73,6 +76,7 @@ async def _run_clustering(job_id: str, query_id: str) -> None:
 
         _clustering_jobs[job_id] = "complete"
     except Exception as e:
+        log.exception("Clustering failed for query %s", query_id)
         _clustering_jobs[job_id] = f"failed: {e}"
 
 
@@ -94,7 +98,8 @@ Return ONLY a JSON array: [{{"name": "Theme Name", "description": "one sentence 
 Sources:
 {sample}"""
 
-    response = litellm.completion(
+    response = await asyncio.to_thread(
+        litellm.completion,
         model=f"{settings.llm_provider}/{settings.llm_model}",
         messages=[{"role": "user", "content": prompt}],
         api_key=settings.llm_api_key,
