@@ -922,6 +922,7 @@ function startPolling() {
   if (state.pollInterval) clearInterval(state.pollInterval);
   state.pollErrorCount = 0;
   state.pollInFlight = false;
+  document.getElementById("btn-abandon-job")?.classList.remove("hidden");
   state.pollInterval = setInterval(pollStatus, 2000);
 }
 
@@ -938,6 +939,7 @@ async function pollStatus() {
     if (["complete", "saturated", "failed"].includes(job.status)) {
       clearInterval(state.pollInterval);
       state.pollInterval = null;
+      document.getElementById("btn-abandon-job")?.classList.add("hidden");
       const btn = document.getElementById("btn-search");
       if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
       appLog("info", `Search ${state.jobId} finished`, `status=${job.status}, sources=${job.progress.total_sources_found}`);
@@ -980,12 +982,14 @@ async function pollStatus() {
     } else if (state.pollErrorCount >= 5) {
       clearInterval(state.pollInterval);
       state.pollInterval = null;
+      document.getElementById("btn-abandon-job")?.classList.add("hidden");
       const btn = document.getElementById("btn-search");
       if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
       const statusEl = document.getElementById("search-status-msg");
       if (statusEl) statusEl.innerHTML =
         `<span class="alda-status-msg error">Lost connection to server. </span>` +
         `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="retryPoll()">Reconnect</button> ` +
+        `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="abandonJob()">View results</button> ` +
         `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="openLogModal()">View log</button>`;
     } else {
       showStatus("search-status-msg",
@@ -1000,9 +1004,11 @@ async function recoverFromLostJob() {
   if (!state.queryId) return;
   showStatus("search-status-msg", "Server restarted — checking for saved results…");
   appLog("info", "Job not found in server memory — checking DB for results", state.queryId);
+  document.getElementById("btn-abandon-job")?.classList.add("hidden");
   try {
     const counts = await api("GET", `/api/v1/search/results/${state.queryId}/count`);
     const btn = document.getElementById("btn-search");
+    if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
     if (counts.total > 0) {
       appLog("info", "Recovered results after server restart", `${counts.total} sources found`);
       if (state.currentQuery) {
@@ -1011,13 +1017,11 @@ async function recoverFromLostJob() {
       setStepState("brief", "done");
       setStepState("search", "done");
       setStepState("results", "active");
-      if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
       showStatus("search-status-msg",
         `Found ${counts.total} saved result${counts.total !== 1 ? "s" : ""} — going to results…`, "success");
       setTimeout(() => { showStep("results"); loadResults(true); }, 900);
     } else {
       appLog("error", "Server restarted and no results were saved", "search will need to be re-run");
-      if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
       const statusEl = document.getElementById("search-status-msg");
       if (statusEl) statusEl.innerHTML =
         `<span class="alda-status-msg error">Server restarted and the search was lost (no results saved). </span>` +
@@ -1030,6 +1034,43 @@ async function recoverFromLostJob() {
 
 function isNetworkDown(msg) {
   return msg === "Failed to fetch" || /^HTTP 5/.test(msg);
+}
+
+async function abandonJob() {
+  clearInterval(state.pollInterval);
+  state.pollInterval = null;
+  if (_wakeTimer) { clearTimeout(_wakeTimer); _wakeTimer = null; }
+  state.pollInFlight = false;
+  state.pollErrorCount = 0;
+  state.jobId = null;
+
+  document.getElementById("btn-abandon-job")?.classList.add("hidden");
+  const btn = document.getElementById("btn-search");
+  if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
+
+  if (!state.queryId) {
+    showStatus("search-status-msg", "Search stopped.");
+    document.getElementById("search-progress")?.classList.add("hidden");
+    return;
+  }
+
+  showStatus("search-status-msg", "Checking for saved results…");
+  try {
+    const counts = await api("GET", `/api/v1/search/results/${state.queryId}/count`);
+    if (counts.total > 0) {
+      appLog("info", "Stopped search — navigating to partial results", `${counts.total} sources`);
+      setStepState("results", "active");
+      showStatus("search-status-msg",
+        `Stopped. Showing ${counts.total} result${counts.total !== 1 ? "s" : ""} found so far.`, "success");
+      setTimeout(() => { showStep("results"); loadResults(true); }, 600);
+    } else {
+      document.getElementById("search-progress")?.classList.add("hidden");
+      showStatus("search-status-msg", "Search stopped. No results saved yet.");
+    }
+  } catch (_) {
+    document.getElementById("search-progress")?.classList.add("hidden");
+    showStatus("search-status-msg", "Search stopped.");
+  }
 }
 
 // Wake a sleeping Render instance by pinging /health, then resume polling.
@@ -1064,11 +1105,13 @@ function wakeAndResume() {
     } catch (_) {
       if (attempt + 1 >= MAX_ATTEMPTS) {
         _wakeTimer = null;
+        document.getElementById("btn-abandon-job")?.classList.add("hidden");
         appLog("error", "Server did not wake up within 90s", "");
         const statusEl = document.getElementById("search-status-msg");
         if (statusEl) statusEl.innerHTML =
           `<span class="alda-status-msg error">Server did not respond after 90s. </span>` +
           `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="wakeAndResume()">Try again</button> ` +
+          `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="abandonJob()">View results</button> ` +
           `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="openLogModal()">View log</button>`;
         const btn = document.getElementById("btn-search");
         if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
@@ -1712,6 +1755,7 @@ Object.assign(window, {
   retryPoll,
   wakeAndResume,
   recoverFromLostJob,
+  abandonJob,
   // Results
   loadResults,
   // Upload
