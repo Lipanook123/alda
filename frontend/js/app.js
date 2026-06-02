@@ -966,7 +966,12 @@ async function pollStatus() {
   } catch (e) {
     state.pollErrorCount++;
     appLog("error", `Poll attempt ${state.pollErrorCount} failed`, e.message);
-    if (state.pollErrorCount >= 5) {
+    if (isNetworkDown(e.message)) {
+      // Server is offline or sleeping — stop polling and start wake sequence
+      clearInterval(state.pollInterval);
+      state.pollInterval = null;
+      wakeAndResume();
+    } else if (state.pollErrorCount >= 5) {
       clearInterval(state.pollInterval);
       state.pollInterval = null;
       const btn = document.getElementById("btn-search");
@@ -985,7 +990,60 @@ async function pollStatus() {
   }
 }
 
-// Resume polling when browser tab becomes visible again (e.g. after phone lock)
+function isNetworkDown(msg) {
+  return msg === "Failed to fetch" || /^HTTP 5/.test(msg);
+}
+
+// Wake a sleeping Render instance by pinging /health, then resume polling.
+let _wakeTimer = null;
+function wakeAndResume() {
+  if (!state.jobId) return;
+  if (_wakeTimer) { clearTimeout(_wakeTimer); _wakeTimer = null; }
+  clearInterval(state.pollInterval);
+  state.pollInterval = null;
+  state.pollInFlight = false;
+
+  const MAX_ATTEMPTS = 18; // 5s × 18 = 90s
+
+  appLog("info", "Server appears offline — sending wake-up request", state.jobId);
+
+  const tryWake = async (attempt) => {
+    if (!state.jobId) return;
+    const secsLeft = (MAX_ATTEMPTS - attempt) * 5;
+    const statusEl = document.getElementById("search-status-msg");
+    if (statusEl) statusEl.innerHTML = attempt === 0
+      ? `<span class="alda-status-msg">Server offline — sending wake-up request…</span>`
+      : `<span class="alda-status-msg">Waiting for server to wake up… (${secsLeft}s remaining) ` +
+        `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="wakeAndResume()">Retry now</button></span>`;
+    try {
+      await api("GET", "/api/v1/health");
+      _wakeTimer = null;
+      appLog("info", "Server woke up — resuming poll", `after ${attempt + 1} attempt(s)`);
+      state.pollErrorCount = 0;
+      const btn = document.getElementById("btn-search");
+      if (btn) { btn.disabled = true; btn.textContent = "Searching…"; }
+      startPolling();
+    } catch (_) {
+      if (attempt + 1 >= MAX_ATTEMPTS) {
+        _wakeTimer = null;
+        appLog("error", "Server did not wake up within 90s", "");
+        const statusEl = document.getElementById("search-status-msg");
+        if (statusEl) statusEl.innerHTML =
+          `<span class="alda-status-msg error">Server did not respond after 90s. </span>` +
+          `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="wakeAndResume()">Try again</button> ` +
+          `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="openLogModal()">View log</button>`;
+        const btn = document.getElementById("btn-search");
+        if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
+      } else {
+        _wakeTimer = setTimeout(() => tryWake(attempt + 1), 5000);
+      }
+    }
+  };
+
+  tryWake(0);
+}
+
+// Resume polling when browser tab becomes visible again (e.g. after PC sleep or phone lock)
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible" || !state.jobId) return;
   if (state.pollInterval) {
@@ -993,19 +1051,16 @@ document.addEventListener("visibilitychange", () => {
     state.pollErrorCount = 0;
     state.pollInFlight = false;
   } else {
-    // Polling was stopped (too many errors while hidden) — auto-reconnect
-    retryPoll();
+    // Polling was stopped — wake the server and resume
+    wakeAndResume();
   }
 });
 
 function retryPoll() {
   if (!state.jobId) return;
   state.pollErrorCount = 0;
-  showStatus("search-status-msg", "Reconnecting…");
-  const btn = document.getElementById("btn-search");
-  if (btn) { btn.disabled = true; btn.textContent = "Searching…"; }
   appLog("info", "Retrying poll for job", state.jobId);
-  startPolling();
+  wakeAndResume();
 }
 
 function updateProgress(job) {
@@ -1617,6 +1672,7 @@ Object.assign(window, {
   // Search
   startSearch,
   retryPoll,
+  wakeAndResume,
   // Results
   loadResults,
   // Upload
