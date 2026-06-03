@@ -204,6 +204,29 @@ def get_sources_for_query(conn, query_id: str, page: int = 1, page_size: int = 5
     return [_row_to_source(r, cols) for r in rows]
 
 
+def get_sources_for_query_all(conn, query_id: str) -> list[dict]:
+    """Return all sources for a query without pagination (used for LLM scoring phase)."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT s.id, s.title, s.authors, s.year, s.doi, s.url, s.abstract,
+               s.venue, s.citation_count, s.source_type, s.relevance,
+               s.themes, s.metadata, s.created_at
+        FROM sources s
+        JOIN query_logs ql ON s.id = ql.source_id
+        WHERE ql.query_id = ?
+        """,
+        [query_id],
+    ).fetchall()
+    cols = ["id", "title", "authors", "year", "doi", "url", "abstract",
+            "venue", "citation_count", "source_type", "relevance",
+            "themes", "metadata", "created_at"]
+    return [_row_to_source(r, cols) for r in rows]
+
+
+def update_source_relevance(conn, source_id: str, relevance: float) -> None:
+    conn.execute("UPDATE sources SET relevance = ? WHERE id = ?", [relevance, source_id])
+
+
 def get_all_source_ids(conn) -> set[str]:
     rows = conn.execute("SELECT id FROM sources").fetchall()
     return {r[0] for r in rows}

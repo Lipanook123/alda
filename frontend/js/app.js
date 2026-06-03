@@ -39,11 +39,13 @@ const SOURCE_NAMES = {
 };
 
 const JOB_STATUS_LABELS = {
-  running:   "Searching…",
-  complete:  "Search complete",
-  saturated: "Search complete — no further new sources found",
-  failed:    "Search failed",
-  pending:   "Starting…",
+  running:           "Searching…",
+  awaiting_scoring:  "Search complete",
+  scoring:           "Running relevance analysis…",
+  complete:          "Search complete",
+  saturated:         "Search complete — no further new sources found",
+  failed:            "Search failed",
+  pending:           "Starting…",
 };
 
 const TOKEN_PRICING = {
@@ -373,6 +375,7 @@ async function syncLmToBackend(cfg) {
 // ──────────────────────────────────────────────
 let _gateLmProvider = null;
 let _lmGateFromSettings = false;
+let _lmGateFromScoringGate = false;
 
 function initLmGate() {
   const grid = document.getElementById("gate-provider-grid");
@@ -392,7 +395,7 @@ function gateLmGoTo(step) {
   document.querySelectorAll(".alda-gate-step").forEach(s => s.classList.add("hidden"));
   document.getElementById(`gate-lm-${step}`)?.classList.remove("hidden");
   const cancelBtn = document.getElementById("btn-gate-lm-cancel");
-  if (cancelBtn) cancelBtn.classList.toggle("hidden", !_lmGateFromSettings);
+  if (cancelBtn) cancelBtn.classList.toggle("hidden", !_lmGateFromSettings && !_lmGateFromScoringGate);
 }
 
 function gateLmSelectProvider(key) {
@@ -467,6 +470,11 @@ async function gateLmTestAndSave() {
 
 function passLmGate() {
   hideGate("lm");
+  if (_lmGateFromScoringGate) {
+    _lmGateFromScoringGate = false;
+    _startScoringPhase();
+    return;
+  }
   const appIsHidden = document.getElementById("app")?.classList.contains("hidden");
   if (_lmGateFromSettings) {
     _lmGateFromSettings = false;
@@ -481,6 +489,11 @@ function passLmGate() {
 }
 
 function cancelLmGate() {
+  if (_lmGateFromScoringGate) {
+    _lmGateFromScoringGate = false;
+    hideGate("lm");
+    return;  // scoring gate is still visible underneath
+  }
   if (!_lmGateFromSettings) return;
   hideGate("lm");
   _lmGateFromSettings = false;
@@ -911,6 +924,7 @@ async function startSearch() {
     appLog("info", "Search started", `job_id=${result.job_id}, sources=${sources.join(",")}`);
 
     document.getElementById("search-progress")?.classList.remove("hidden");
+    document.getElementById("scoring-gate")?.classList.add("hidden");
     const btn = document.getElementById("btn-search");
     if (btn) { btn.disabled = true; btn.textContent = "Searching…"; }
     // Show animated progress immediately before the first poll returns
@@ -942,28 +956,31 @@ async function pollStatus() {
     updateProgress(job);
     showStatus("search-status-msg", "");
 
-    if (["complete", "saturated", "failed"].includes(job.status)) {
+    if (["complete", "saturated", "failed", "awaiting_scoring"].includes(job.status)) {
       clearInterval(state.pollInterval);
       state.pollInterval = null;
       document.getElementById("btn-abandon-job")?.classList.add("hidden");
-      const btn = document.getElementById("btn-search");
-      if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
-      appLog("info", `Search ${state.jobId} finished`, `status=${job.status}, sources=${job.progress.total_sources_found}`);
+
+      appLog("info", `Search ${state.jobId} reached status`, `${job.status}, sources=${job.progress.total_sources_found}`);
 
       if (job.status === "failed") {
+        const btn = document.getElementById("btn-search");
+        if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
         const errMsg = job.progress.error || "unknown error";
         appLog("error", "Search failed", errMsg);
         showStatus("search-status-msg", `Search failed: ${errMsg}`, "error");
+      } else if (job.status === "awaiting_scoring") {
+        showScoringGate(job);
       } else {
+        const btn = document.getElementById("btn-search");
+        if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
         const total = job.progress.total_sources_found;
         showStatus("search-status-msg",
           `Found ${total} source${total !== 1 ? "s" : ""}. Going to results…`, "success");
 
-        // Update persistent state
         if (state.currentQuery) {
           saveCurrentQuery({ ...state.currentQuery, status: job.status, result_count: total });
         }
-
         setStepState("brief", "done");
         setStepState("search", "done");
         setStepState("results", "active");
@@ -1051,6 +1068,7 @@ async function abandonJob() {
   state.jobId = null;
 
   document.getElementById("btn-abandon-job")?.classList.add("hidden");
+  document.getElementById("scoring-gate")?.classList.add("hidden");
   const btn = document.getElementById("btn-search");
   if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
 
@@ -1152,7 +1170,7 @@ function retryPoll() {
 
 function updateProgress(job) {
   const p = job.progress;
-  const isActive = job.status === "pending" || job.status === "running";
+  const isActive = ["pending", "running", "scoring"].includes(job.status);
   const hasResults = p.total_sources_found > 0;
 
   // Progress bar — indeterminate slide while no results yet, real fill once results arrive
@@ -1175,7 +1193,10 @@ function updateProgress(job) {
   const label = JOB_STATUS_LABELS[job.status] || job.status;
   const statsEl = document.getElementById("search-stats");
   if (statsEl) {
-    if (!hasResults && isActive) {
+    if (job.status === "scoring") {
+      statsEl.innerHTML =
+        `<strong>Running relevance analysis…</strong> — scoring <strong>${p.total_sources_found}</strong> source${p.total_sources_found !== 1 ? "s" : ""}.`;
+    } else if (!hasResults && isActive) {
       const n = document.querySelectorAll('input[name="source"]:checked').length;
       statsEl.innerHTML = `<strong>${label}</strong> — Searching across ${n} database${n !== 1 ? "s" : ""}…`;
     } else if (hasResults) {
@@ -1220,6 +1241,96 @@ function updateProgress(job) {
   const breakdownEl = document.getElementById("source-breakdown");
   if (breakdownEl) breakdownEl.innerHTML =
     (tiles ? `<div class="source-status-grid">${tiles}</div>` : "") + tokenNote;
+}
+
+// ──────────────────────────────────────────────
+// Scoring gate
+// ──────────────────────────────────────────────
+function showScoringGate(job) {
+  const p = job.progress;
+  const total = p.total_sources_found;
+  const bd = p.source_breakdown || {};
+
+  // Build two-column table sorted by count descending
+  const rows = Object.entries(bd)
+    .sort(([, a], [, b]) => b - a)
+    .map(([src, count]) => {
+      const name = SOURCE_NAMES[src] || src;
+      return `<tr><td>${esc(name)}</td><td style="text-align:right;font-weight:700">${count}</td></tr>`;
+    }).join("");
+
+  const runBtn = `<button class="alda-btn alda-btn-primary" onclick="runScoring()">Run relevance analysis</button>`;
+
+  const gate = document.getElementById("scoring-gate");
+  if (!gate) return;
+  gate.classList.remove("hidden");
+  gate.innerHTML =
+    `<p><strong>${total}</strong> source${total !== 1 ? "s" : ""} found. ` +
+    `Would you like the language model to score each source for relevance to your research question?</p>` +
+    (rows
+      ? `<table class="prisma-table" style="margin:0.75rem 0;max-width:28rem">
+           <thead><tr><th>Source</th><th style="text-align:right">Found</th></tr></thead>
+           <tbody>${rows}</tbody>
+         </table>`
+      : "") +
+    `<div class="alda-btn-row" style="margin-top:1rem">
+       ${runBtn}
+       <button class="alda-btn alda-btn-secondary" onclick="skipScoring()">Skip — go to results</button>
+     </div>`;
+
+  // Reset search button so user can re-run if they want
+  const btn = document.getElementById("btn-search");
+  if (btn) { btn.disabled = false; btn.textContent = "Start Search"; }
+}
+
+async function runScoring() {
+  if (!state.lmProvider || !state.lmModel) {
+    // LLM not configured — open the setup wizard; passLmGate will call _startScoringPhase
+    _lmGateFromScoringGate = true;
+    showGate("lm");
+    gateLmGoTo(1);
+    return;
+  }
+  await _startScoringPhase();
+}
+
+async function _startScoringPhase() {
+  // Disable buttons to prevent double-click during API call
+  document.getElementById("scoring-gate")?.querySelectorAll("button")
+    .forEach(b => { b.disabled = true; });
+  try {
+    await api("POST", `/api/v1/search/score/${state.jobId}`);
+    appLog("info", "Relevance scoring started", state.jobId);
+    if (state.pollInterval) clearInterval(state.pollInterval);
+    state.pollErrorCount = 0;
+    state.pollInFlight = false;
+    document.getElementById("scoring-gate")?.classList.add("hidden");
+    document.getElementById("search-progress")?.classList.remove("hidden");
+    state.pollInterval = setInterval(pollStatus, 2000);
+  } catch (e) {
+    appLog("error", "Failed to start scoring", e.message);
+    document.getElementById("scoring-gate")?.querySelectorAll("button")
+      .forEach(b => { b.disabled = false; });
+    showStatus("search-status-msg", `Could not start relevance analysis: ${e.message}`, "error");
+  }
+}
+
+async function skipScoring() {
+  try {
+    await api("POST", `/api/v1/search/score/${state.jobId}/skip`);
+    appLog("info", "Relevance scoring skipped", state.jobId);
+    document.getElementById("scoring-gate")?.classList.add("hidden");
+    if (state.currentQuery) {
+      saveCurrentQuery({ ...state.currentQuery, status: "complete" });
+    }
+    setStepState("brief", "done");
+    setStepState("search", "done");
+    setStepState("results", "active");
+    setTimeout(() => { showStep("results"); loadResults(true); }, 300);
+  } catch (e) {
+    appLog("error", "Failed to skip scoring", e.message);
+    showStatus("search-status-msg", `Could not skip: ${e.message}`, "error");
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -1962,4 +2073,7 @@ Object.assign(window, {
   // Chromium install modal
   cancelChromiumInstall,
   proceedChromiumInstall,
+  // Scoring gate
+  runScoring,
+  skipScoring,
 });

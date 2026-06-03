@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Alice&family=Raleway:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css?v=3" />
+  <link rel="stylesheet" href="css/style.css?v=5" />
 </head>
 <body>
 
@@ -248,6 +248,9 @@
           <div id="search-stats" class="search-stats"></div>
           <div id="source-breakdown" style="margin-top:0.5rem"></div>
         </div>
+
+        <!-- Scoring gate (shown after search, before LLM scoring) -->
+        <div id="scoring-gate" class="hidden" style="margin-bottom:1.5rem"></div>
 
         <!-- Advanced options -->
         <details id="search-advanced">
@@ -634,6 +637,6 @@ https://example.org/paper1,My Paper Title,Smith J; Jones A,2022</code></pre>
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=3"></script>
+<script type="module" src="js/app.js?v=5"></script>
 </body>
 </html>

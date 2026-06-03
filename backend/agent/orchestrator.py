@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 
 # In-memory job registry (single-instance MVP)
 _jobs: dict[str, SearchJobStatus] = {}
+_job_requests: dict[str, SearchJobRequest] = {}
 
 
 def create_job(query_id: str) -> SearchJobStatus:
@@ -42,8 +43,13 @@ def get_job(job_id: str) -> SearchJobStatus | None:
     return _jobs.get(job_id)
 
 
+def get_job_request(job_id: str) -> SearchJobRequest | None:
+    return _job_requests.get(job_id)
+
+
 async def run_search(job_id: str, request: SearchJobRequest) -> None:
-    """Full search pipeline, runs as a FastAPI background task."""
+    """Search pipeline (fetch + dedup + insert). Pauses at awaiting_scoring for user confirmation."""
+    _job_requests[job_id] = request
     job = _jobs[job_id]
     job.status = "running"
     job.updated_at = datetime.now(timezone.utc)
@@ -52,6 +58,28 @@ async def run_search(job_id: str, request: SearchJobRequest) -> None:
         await _pipeline(job, request)
     except Exception as e:
         log.exception("Search pipeline error for job %s", job_id)
+        job.status = "failed"
+        job.progress.error = str(e)
+        job.updated_at = datetime.now(timezone.utc)
+        async with database.get_conn() as conn:
+            database.update_query_status(conn, request.query_id, "failed")
+
+
+async def run_scoring(job_id: str) -> None:
+    """LLM relevance scoring phase, runs after user confirms."""
+    job = _jobs.get(job_id)
+    request = _job_requests.get(job_id)
+    if not job or not request:
+        log.error("run_scoring called for unknown job %s", job_id)
+        return
+
+    job.status = "scoring"
+    job.updated_at = datetime.now(timezone.utc)
+
+    try:
+        await _score_phase(job, request)
+    except Exception as e:
+        log.exception("Scoring error for job %s", job_id)
         job.status = "failed"
         job.progress.error = str(e)
         job.updated_at = datetime.now(timezone.utc)
@@ -96,7 +124,6 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
     extra_terms: list[str] | None = None
     total_inserted = 0
     total_duplicates = 0
-    tokens_total = 0
     max_iterations = 5
 
     for iteration in range(1, max_iterations + 1):
@@ -138,22 +165,6 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
                     if translated_abstract:
                         src.metadata["translated_abstract"] = translated_abstract
 
-        # Relevance scoring (LLM if configured, budget permitting)
-        if request.use_llm_relevance and _config.is_llm_configured() and unique_candidates:
-            budget_ok = (
-                request.max_token_budget is None
-                or tokens_total < request.max_token_budget
-            )
-            if budget_ok:
-                unique_candidates, batch_tokens = summarizer.score_relevance(unique_candidates, brief)
-                tokens_total += batch_tokens
-                job.progress.tokens_used = tokens_total
-            else:
-                log.info(
-                    "Token budget %d reached (%d used) — skipping LLM scoring",
-                    request.max_token_budget, tokens_total,
-                )
-
         # Insert into DB
         inserted_this_iter = 0
         async with database.get_conn() as conn:
@@ -190,7 +201,6 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
         # Check saturation
         if iterative.check_saturation(iteration_new_counts, total_inserted):
             job.progress.saturation_reached = True
-            job.status = "saturated"
             log.info("Saturation reached after %d iterations", iteration)
             break
 
@@ -203,15 +213,52 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
         if effective_limit and total_inserted >= effective_limit:
             break
 
-    else:
-        job.status = "complete"
-
-    if job.status == "running":
-        job.status = "complete"
-
+    # Always pause for user to review source counts before any LLM scoring
+    job.status = "awaiting_scoring"
     job.updated_at = datetime.now(timezone.utc)
     async with database.get_conn() as conn:
         database.update_query_status(conn, query_id, job.status, results_count=total_inserted)
 
-    log.info("Job %s finished with status=%s, total=%d, tokens=%d",
-             job.job_id, job.status, total_inserted, tokens_total)
+    log.info("Job %s search phase done: status=%s, total=%d", job.job_id, job.status, total_inserted)
+
+
+async def _score_phase(job: SearchJobStatus, request: SearchJobRequest) -> None:
+    """Score all sources for this query with the LLM and update the DB."""
+    query_id = request.query_id
+
+    async with database.get_conn() as conn:
+        query_row = database.get_query(conn, query_id)
+    brief_data = json.loads(query_row.get("search_strategy") or "{}")
+    brief = StructuredBrief(**brief_data)
+
+    async with database.get_conn() as conn:
+        sources_data = database.get_sources_for_query_all(conn, query_id)
+
+    from backend.api.models import SourceIn as _SourceIn  # noqa: PLC0415
+    source_ins: list[_SourceIn] = []
+    for s in sources_data:
+        try:
+            source_ins.append(_SourceIn(**s))
+        except Exception:
+            pass
+
+    tokens_total = 0
+    if source_ins:
+        budget_ok = (request.max_token_budget is None or tokens_total < request.max_token_budget)
+        if budget_ok:
+            scored, batch_tokens = summarizer.score_relevance(source_ins, brief)
+            tokens_total += batch_tokens
+            job.progress.tokens_used = tokens_total
+            async with database.get_conn() as conn:
+                for src in scored:
+                    if src.relevance is not None and src.id:
+                        database.update_source_relevance(conn, src.id, src.relevance)
+
+    final_status = "saturated" if job.progress.saturation_reached else "complete"
+    job.status = final_status
+    job.updated_at = datetime.now(timezone.utc)
+    async with database.get_conn() as conn:
+        database.update_query_status(conn, query_id, final_status)
+
+    log.info("Job %s scoring done: status=%s, sources=%d, tokens=%d",
+             job.job_id, final_status, len(source_ins), tokens_total)
