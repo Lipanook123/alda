@@ -550,19 +550,63 @@ function showApp() {
 }
 
 function restoreState() {
-  if (state.currentQuery?.query_id) {
-    state.queryId = state.currentQuery.query_id;
-    state.maxResults = state.currentQuery.max_results || 200;
-    // Unlock steps
+  populateSearchSwitcher();
+  loadRecentQueries();
+
+  const q = state.currentQuery;
+  if (!q?.query_id) {
+    showStep("brief", true);
+    return;
+  }
+
+  state.queryId = q.query_id;
+  state.maxResults = q.max_results || 200;
+  setStepState("brief", "done");
+
+  const status = q.status || "pending";
+  const knownResultCount = q.result_count ?? null;
+
+  if (status === "pending") {
+    // Brief parsed but no search run yet — go to search step
+    setStepState("search", "active");
+    setStepState("results", "disabled");
+    showStep("search", true);
+    return;
+  }
+
+  if (status === "failed") {
+    // Search failed — go to search step with offer to retry
+    setStepState("search", "active");
+    setStepState("results", "disabled");
+    showStatus("search-status-msg", "Previous search did not complete. You can start a new search.");
+    showStep("search", true);
+    return;
+  }
+
+  if (["running", "awaiting_scoring", "scoring"].includes(status)) {
+    // Was mid-search when the page was last closed — check DB for any saved results
+    setStepState("search", "active");
+    setStepState("results", "active");
+    showStep("search", true);
+    recoverFromLostJob();
+    return;
+  }
+
+  // complete / saturated
+  if (knownResultCount > 0) {
+    // Known results — go straight to results
     setStepState("search", "done");
     setStepState("results", "active");
     loadResults(true);
     showStep("results", true);
   } else {
-    showStep("brief", true);
+    // result_count unknown or 0 — verify with DB before deciding
+    setStepState("search", "done");
+    setStepState("results", "active");
+    showStep("search", true);
+    showStatus("search-status-msg", "Checking for saved results…");
+    recoverFromLostJob();
   }
-  populateSearchSwitcher();
-  loadRecentQueries();
 }
 
 // ──────────────────────────────────────────────
@@ -1028,8 +1072,8 @@ async function pollStatus() {
 
 async function recoverFromLostJob() {
   if (!state.queryId) return;
-  showStatus("search-status-msg", "Server restarted — checking for saved results…");
-  appLog("info", "Job not found in server memory — checking DB for results", state.queryId);
+  showStatus("search-status-msg", "Checking for saved results…");
+  appLog("info", "Checking DB for saved results", state.queryId);
   document.getElementById("btn-abandon-job")?.classList.add("hidden");
   try {
     const counts = await api("GET", `/api/v1/search/results/${state.queryId}/count`);
@@ -1047,14 +1091,14 @@ async function recoverFromLostJob() {
         `Found ${counts.total} saved result${counts.total !== 1 ? "s" : ""} — going to results…`, "success");
       setTimeout(() => { showStep("results"); loadResults(true); }, 900);
     } else {
-      appLog("error", "Server restarted and no results were saved", "search will need to be re-run");
+      appLog("info", "No saved results found for this query", "ready to run search");
       const statusEl = document.getElementById("search-status-msg");
       if (statusEl) statusEl.innerHTML =
-        `<span class="alda-status-msg error">Server restarted and the search was lost (no results saved). </span>` +
-        `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="startSearch()">Re-run search</button>`;
+        `<span class="alda-status-msg">No results saved for this search. </span>` +
+        `<button class="alda-btn alda-btn-secondary alda-btn-sm" onclick="startSearch()">Start search</button>`;
     }
   } catch (_) {
-    showStatus("search-status-msg", "Server restarted — could not recover results.", "error");
+    showStatus("search-status-msg", "Could not check for saved results. Start a new search when ready.");
   }
 }
 
