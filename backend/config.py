@@ -80,6 +80,21 @@ def get_bing_api_key() -> str | None:
     return _runtime_keys.get("bing_api_key") or settings.bing_api_key
 
 
+# ── Runtime-applied scraping toggle ─────────────────────────────────────────
+_runtime_scraping: bool | None = None
+
+
+def get_scraping_enabled() -> bool:
+    if _runtime_scraping is not None:
+        return _runtime_scraping
+    return settings.scraping_enabled
+
+
+def set_scraping_enabled(value: bool) -> None:
+    global _runtime_scraping
+    _runtime_scraping = value
+
+
 def load_persisted_config() -> None:
     """Called at startup — loads LLM credentials and API keys saved by the setup wizards."""
     config_file = settings.data_dir / "alda_config.json"
@@ -100,6 +115,8 @@ def load_persisted_config() -> None:
             google_api_key=data.get("google_api_key") or None,
             bing_api_key=data.get("bing_api_key") or None,
         )
+        if "scraping_enabled" in data:
+            set_scraping_enabled(data["scraping_enabled"])
     except Exception as e:
         log.warning("Could not load persisted config: %s", e)
 

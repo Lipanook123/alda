@@ -1,14 +1,19 @@
 """First-run setup wizard endpoints: configure LLM credentials and source API keys."""
+import asyncio
 import json
 import logging
+import sys
+import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from backend import config as _config
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["setup"])
+
+_install_jobs: dict[str, dict] = {}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -33,10 +38,39 @@ def _persist_config() -> None:
             "google_cse_id": _config.get_google_cse_id() or "",
             "google_api_key": _config.get_google_api_key() or "",
             "bing_api_key": _config.get_bing_api_key() or "",
+            "scraping_enabled": _config.get_scraping_enabled(),
         })
         config_file.write_text(json.dumps(existing))
     except Exception as e:
         log.warning("Could not persist config to disk: %s", e)
+
+
+async def _check_chromium() -> bool:
+    """Return True if the Playwright Chromium binary is already installed."""
+    try:
+        from playwright.async_api import async_playwright  # noqa: PLC0415
+        async with async_playwright() as pw:
+            path = pw.chromium.executable_path
+        from pathlib import Path  # noqa: PLC0415
+        return Path(path).exists()
+    except Exception:
+        return False
+
+
+async def _run_chromium_install(job_id: str) -> None:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "playwright", "install", "chromium",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode == 0:
+            _install_jobs[job_id] = {"status": "complete", "message": "Chromium installed."}
+        else:
+            _install_jobs[job_id] = {"status": "failed", "message": (stdout or b"").decode()[:500]}
+    except Exception as e:
+        _install_jobs[job_id] = {"status": "failed", "message": str(e)}
 
 
 # ── LLM setup ────────────────────────────────────────────────────────────────
@@ -118,3 +152,42 @@ async def get_keys():
         "google_cse": bool(_config.get_google_cse_id() and _config.get_google_api_key()),
         "bing": bool(_config.get_bing_api_key()),
     }
+
+
+# ── Web scraping toggle ───────────────────────────────────────────────────────
+
+class ScrapingToggleRequest(BaseModel):
+    enabled: bool
+
+
+@router.get("/setup/scraping")
+async def get_scraping_status():
+    return {
+        "enabled": _config.get_scraping_enabled(),
+        "chromium_installed": await _check_chromium(),
+    }
+
+
+@router.post("/setup/scraping")
+async def set_scraping(req: ScrapingToggleRequest):
+    if req.enabled and not await _check_chromium():
+        return {"enabled": False, "needs_install": True}
+    _config.set_scraping_enabled(req.enabled)
+    _persist_config()
+    return {"enabled": req.enabled, "needs_install": False}
+
+
+@router.post("/setup/scraping/install-chromium")
+async def install_chromium(background_tasks: BackgroundTasks):
+    job_id = str(uuid.uuid4())
+    _install_jobs[job_id] = {"status": "running", "message": "Downloading Chromium (~150 MB)…"}
+    background_tasks.add_task(_run_chromium_install, job_id)
+    return {"job_id": job_id}
+
+
+@router.get("/setup/scraping/install-status/{job_id}")
+async def chromium_install_status(job_id: str):
+    job = _install_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Install job not found")
+    return job

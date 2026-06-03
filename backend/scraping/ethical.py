@@ -6,7 +6,7 @@ import time
 import urllib.parse
 import urllib.robotparser
 
-from backend.config import settings
+from backend import config as _config
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ _MIN_DELAY = 2.0  # seconds between requests to same domain
 
 async def scrape_url(url: str) -> dict | None:
     """Scrape a URL respecting robots.txt and rate limits. Returns None if disabled or disallowed."""
-    if not settings.scraping_enabled:
+    if not _config.get_scraping_enabled():
         return None
 
     parsed = urllib.parse.urlparse(url)

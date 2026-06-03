@@ -314,6 +314,17 @@
               <p class="alda-field-help" style="margin-top:0.4rem">Requires a language model API key. If not configured, this option is safely ignored and all results are still returned.</p>
             </fieldset>
 
+            <fieldset>
+              <legend>Deep web scraping</legend>
+              <label>
+                <input type="checkbox" id="use-scraping" />
+                Scrape full page content from web results
+              </label>
+              <p class="alda-field-help" style="margin-top:0.4rem">
+                When enabled, ALDA opens each web page found via DuckDuckGo in a headless browser and extracts the full article text — giving richer abstracts for grey literature. Slower than API searches. Requires Chromium (~150 MB, downloaded once on first enable).
+              </p>
+            </fieldset>
+
           </div>
         </details>
       </div>
@@ -597,6 +608,28 @@ https://example.org/paper1,My Paper Title,Smith J; Jones A,2022</code></pre>
         <button class="alda-btn alda-btn-primary" onclick="saveSettings()">Save settings</button>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<div id="modal-chromium-install" class="alda-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="chromium-modal-title">
+  <div class="alda-modal alda-modal-sm">
+    <div class="alda-modal-header">
+      <h3 id="chromium-modal-title">Download Chromium?</h3>
+    </div>
+    <div class="alda-modal-body">
+      <p>Web scraping requires a headless browser. ALDA will download and install <strong>Chromium (~150 MB)</strong> once — future sessions reuse the cached installation.</p>
+      <p style="margin-top:0.75rem">This download happens on the machine running the ALDA backend.</p>
+      <div id="chromium-install-progress" class="hidden" style="margin-top:1rem">
+        <div class="alda-progress-bar">
+          <div class="alda-progress-fill indeterminate"></div>
+        </div>
+        <p id="chromium-install-msg" class="alda-status-msg" style="margin-top:0.5rem">Downloading…</p>
+      </div>
+      <div id="chromium-install-btns" class="alda-btn-row" style="justify-content:flex-end; margin-top:1.25rem">
+        <button class="alda-btn alda-btn-secondary" onclick="cancelChromiumInstall()">Cancel</button>
+        <button class="alda-btn" id="btn-proceed-chromium" onclick="proceedChromiumInstall()">Download &amp; Install</button>
+      </div>
     </div>
   </div>
 </div>

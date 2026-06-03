@@ -528,6 +528,7 @@ function showApp() {
   initUpload();
   initExport();
   initThemes();
+  initScrapingToggle();
   restoreState();
   checkHealth();
 }
@@ -1614,6 +1615,108 @@ async function loadThemes() {
 }
 
 // ──────────────────────────────────────────────
+// Web scraping toggle
+// ──────────────────────────────────────────────
+async function initScrapingToggle() {
+  try {
+    const st = await api("GET", "/api/v1/setup/scraping");
+    const cb = document.getElementById("use-scraping");
+    if (cb) cb.checked = st.enabled;
+  } catch (_) {}
+  document.getElementById("use-scraping")?.addEventListener("change", onScrapingToggle);
+}
+
+async function onScrapingToggle(e) {
+  const cb = e.target;
+  const enabling = cb.checked;
+  if (!enabling) {
+    try {
+      await api("POST", "/api/v1/setup/scraping", { enabled: false });
+      appLog("info", "Web scraping disabled");
+    } catch (_) {
+      cb.checked = true; // revert
+    }
+    return;
+  }
+  // Enabling: backend will tell us if Chromium needs installing
+  cb.checked = false; // optimistically revert until confirmed
+  try {
+    const res = await api("POST", "/api/v1/setup/scraping", { enabled: true });
+    if (res.needs_install) {
+      document.getElementById("modal-chromium-install")?.classList.remove("hidden");
+    } else {
+      cb.checked = true;
+      appLog("info", "Web scraping enabled");
+    }
+  } catch (_) {}
+}
+
+let _chromiumJobId = null;
+let _chromiumPollInterval = null;
+
+async function cancelChromiumInstall() {
+  document.getElementById("modal-chromium-install")?.classList.add("hidden");
+  // Reset modal state for next time
+  const progress = document.getElementById("chromium-install-progress");
+  const btns = document.getElementById("chromium-install-btns");
+  const btn = document.getElementById("btn-proceed-chromium");
+  if (progress) progress.classList.add("hidden");
+  if (btns) btns.classList.remove("hidden");
+  if (btn) { btn.disabled = false; btn.textContent = "Download & Install"; }
+  if (_chromiumPollInterval) { clearInterval(_chromiumPollInterval); _chromiumPollInterval = null; }
+  _chromiumJobId = null;
+}
+
+async function proceedChromiumInstall() {
+  const btn = document.getElementById("btn-proceed-chromium");
+  const progress = document.getElementById("chromium-install-progress");
+  const btns = document.getElementById("chromium-install-btns");
+  const msg = document.getElementById("chromium-install-msg");
+  if (btn) { btn.disabled = true; btn.textContent = "Installing…"; }
+  if (btns) btns.classList.add("hidden");
+  if (progress) progress.classList.remove("hidden");
+  if (msg) msg.textContent = "Downloading Chromium (~150 MB)…";
+  try {
+    const res = await api("POST", "/api/v1/setup/scraping/install-chromium");
+    _chromiumJobId = res.job_id;
+    _chromiumPollInterval = setInterval(pollChromiumInstall, 2000);
+  } catch (e) {
+    if (msg) msg.textContent = `Install failed: ${esc(e.message)}`;
+    if (btn) { btn.disabled = false; btn.textContent = "Download & Install"; }
+    if (btns) btns.classList.remove("hidden");
+    if (progress) progress.classList.add("hidden");
+  }
+}
+
+async function pollChromiumInstall() {
+  if (!_chromiumJobId) return;
+  try {
+    const st = await api("GET", `/api/v1/setup/scraping/install-status/${_chromiumJobId}`);
+    const msg = document.getElementById("chromium-install-msg");
+    if (st.status === "complete") {
+      clearInterval(_chromiumPollInterval);
+      _chromiumPollInterval = null;
+      // Now actually enable scraping
+      await api("POST", "/api/v1/setup/scraping", { enabled: true });
+      const cb = document.getElementById("use-scraping");
+      if (cb) cb.checked = true;
+      appLog("info", "Chromium installed — web scraping enabled");
+      document.getElementById("modal-chromium-install")?.classList.add("hidden");
+    } else if (st.status === "failed") {
+      clearInterval(_chromiumPollInterval);
+      _chromiumPollInterval = null;
+      if (msg) msg.textContent = `Install failed: ${esc(st.message || "unknown error")}`;
+      const btns = document.getElementById("chromium-install-btns");
+      const btn = document.getElementById("btn-proceed-chromium");
+      if (btns) btns.classList.remove("hidden");
+      if (btn) { btn.disabled = false; btn.textContent = "Retry"; }
+    } else {
+      if (msg) msg.textContent = st.message || "Downloading…";
+    }
+  } catch (_) {}
+}
+
+// ──────────────────────────────────────────────
 // Settings modal
 // ──────────────────────────────────────────────
 let _settingsMaxResults = 500;
@@ -1856,4 +1959,7 @@ Object.assign(window, {
   saveBackendUrl,
   selectMaxResults,
   selectMaxResultsCustom,
+  // Chromium install modal
+  cancelChromiumInstall,
+  proceedChromiumInstall,
 });

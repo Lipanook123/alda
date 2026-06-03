@@ -5,14 +5,14 @@ import logging
 
 import httpx
 
-from backend.config import settings
+from backend import config as _config
 
 log = logging.getLogger(__name__)
 
 
 async def extract_text_from_pdf_url(url: str) -> str | None:
     """Download a PDF from `url` and return extracted text (first 5000 chars)."""
-    if not settings.scraping_enabled:
+    if not _config.get_scraping_enabled():
         return None
 
     try:
