@@ -42,11 +42,11 @@ async def get_status(job_id: str) -> SearchJobStatus:
     live_count = counts["total"]
     db_status = query_row.get("status") or "failed"
 
-    # If the server died mid-search, treat as complete when results were saved
-    if db_status == "running":
+    # If the server died mid-search or mid-scoring, treat as complete when results were saved
+    if db_status in ("running", "awaiting_scoring", "scoring"):
         recovered_status = "complete" if live_count > 0 else "failed"
-        log.info("Recovered job %s from DB: db_status=running, live_count=%d → %s",
-                 job_id, live_count, recovered_status)
+        log.info("Recovered job %s from DB: db_status=%s, live_count=%d → %s",
+                 job_id, db_status, live_count, recovered_status)
     else:
         recovered_status = db_status
 
@@ -59,6 +59,34 @@ async def get_status(job_id: str) -> SearchJobStatus:
         created_at=ts,
         updated_at=datetime.now(timezone.utc),
     )
+
+
+@router.post("/score/{job_id}")
+async def trigger_scoring(job_id: str, background_tasks: BackgroundTasks) -> dict:
+    """Trigger LLM relevance scoring after the user confirms."""
+    job = orchestrator.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "awaiting_scoring":
+        raise HTTPException(status_code=400, detail=f"Job not awaiting scoring (status={job.status})")
+    background_tasks.add_task(orchestrator.run_scoring, job_id)
+    return {"job_id": job_id, "status": "scoring"}
+
+
+@router.post("/score/{job_id}/skip")
+async def skip_scoring(job_id: str) -> dict:
+    """Skip LLM scoring — mark the job as complete immediately."""
+    job = orchestrator.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "awaiting_scoring":
+        raise HTTPException(status_code=400, detail=f"Job not awaiting scoring (status={job.status})")
+    final_status = "saturated" if job.progress.saturation_reached else "complete"
+    job.status = final_status
+    job.updated_at = datetime.now(timezone.utc)
+    async with database.get_conn() as conn:
+        database.update_query_status(conn, job.query_id, final_status)
+    return {"job_id": job_id, "status": final_status}
 
 
 @router.get("/results/{query_id}/count")

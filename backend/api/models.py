@@ -104,7 +104,7 @@ class SearchProgress(BaseModel):
 class SearchJobStatus(BaseModel):
     job_id: str
     query_id: str
-    status: Literal["pending", "running", "complete", "failed", "saturated"] = "pending"
+    status: Literal["pending", "running", "awaiting_scoring", "scoring", "complete", "failed", "saturated"] = "pending"
     progress: SearchProgress = SearchProgress()
     created_at: datetime
     updated_at: datetime
