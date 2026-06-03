@@ -139,9 +139,23 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
         academic_results = []
         grey_results = []
         if academic_sources_requested:
-            academic_results = await academic.search(brief, academic_sources_requested, extra_terms)
+            academic_results, academic_raw, academic_errors = await academic.search(
+                brief, academic_sources_requested, extra_terms
+            )
+            for k, v in academic_raw.items():
+                job.progress.source_raw_counts[k] = job.progress.source_raw_counts.get(k, 0) + v
+            for e in academic_errors:
+                if e not in job.progress.source_errors:
+                    job.progress.source_errors.append(e)
         if grey_sources_requested:
-            grey_results = await grey.search(brief, grey_sources_requested, extra_terms)
+            grey_results, grey_raw, grey_errors = await grey.search(
+                brief, grey_sources_requested, extra_terms
+            )
+            for k, v in grey_raw.items():
+                job.progress.source_raw_counts[k] = job.progress.source_raw_counts.get(k, 0) + v
+            for e in grey_errors:
+                if e not in job.progress.source_errors:
+                    job.progress.source_errors.append(e)
 
         candidates = academic_results + grey_results
 

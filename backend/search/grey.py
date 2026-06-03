@@ -46,7 +46,7 @@ async def search(
     brief: StructuredBrief,
     enabled_sources: list[str],
     extra_terms: list[str] | None = None,
-) -> list[SourceIn]:
+) -> tuple[list[SourceIn], dict[str, int], list[str]]:
     query = _build_query(brief, extra_terms)
     tasks: dict[str, asyncio.Task] = {}
 
@@ -63,13 +63,18 @@ async def search(
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     sources: list[SourceIn] = []
+    raw_counts: dict[str, int] = {}
+    errors: list[str] = []
+
     for name, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):
             log.warning("Grey search error (%s): %s", name, result)
+            errors.append(name)
         elif isinstance(result, list):
             sources.extend(result)
+            raw_counts[name] = len(result)
 
-    return sources
+    return sources, raw_counts, errors
 
 
 # ---------------------------------------------------------------------------

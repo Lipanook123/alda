@@ -54,7 +54,7 @@ async def search(
     brief: StructuredBrief,
     enabled_sources: list[str],
     extra_terms: list[str] | None = None,
-) -> list[SourceIn]:
+) -> tuple[list[SourceIn], dict[str, int], list[str]]:
     query = _build_query(brief, extra_terms)
     tasks: dict[str, asyncio.Task] = {}
 
@@ -177,6 +177,9 @@ async def search(
     _MULTIWORD_KEYS = {"semantic_scholar", "europe_pmc", "who_iris"}
 
     sources: list[SourceIn] = []
+    raw_counts: dict[str, int] = {}
+    errors: list[str] = []
+
     for source_name, result in zip(tasks.keys(), results):
         # Normalise task names: strip language/query suffixes to get canonical API key
         # e.g. "semantic_scholar_q2" → "semantic_scholar",  "core_Chinese..." → "core"
@@ -189,13 +192,16 @@ async def search(
             api_key = source_name.split("_")[0] if "_" in source_name else source_name
         if isinstance(result, Exception):
             log.warning("Error searching %s: %s", source_name, result)
+            if api_key not in errors:
+                errors.append(api_key)
         elif isinstance(result, list):
             # Tag with canonical api name so source breakdown is clean
             for src in result:
                 src.metadata.setdefault("api", api_key)
             sources.extend(result)
+            raw_counts[api_key] = raw_counts.get(api_key, 0) + len(result)
 
-    return sources
+    return sources, raw_counts, errors
 
 
 # ---------------------------------------------------------------------------

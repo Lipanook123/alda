@@ -1258,12 +1258,16 @@ function updateProgress(job) {
     }
   }
 
-  // Per-source tile grid — all selected sources shown; results highlighted, others pulsing
+  // Per-source tile grid — all selected sources shown; count = raw results found before dedup
   const selected = [...document.querySelectorAll('input[name="source"]:checked')].map(el => el.value);
-  const bd = p.source_breakdown || {};
+  const raw = p.source_raw_counts || {};
+  const errs = new Set(p.source_errors || []);
   const tiles = selected.map(src => {
     const name = SOURCE_NAMES[src] || src;
-    const count = bd[src] ?? null;
+    const count = raw[src] ?? null;
+    if (errs.has(src)) {
+      return `<span class="src-tile src-tile-error">${esc(name)}<span class="src-tile-waiting" title="Search failed or was blocked">⚠</span></span>`;
+    }
     if (count > 0) {
       return `<span class="src-tile has-results">${esc(name)}<span class="src-tile-count">${count}</span></span>`;
     }
@@ -1297,13 +1301,32 @@ function showScoringGate(job) {
   const p = job.progress;
   const total = p.total_sources_found;
   const bd = p.source_breakdown || {};
+  const raw = p.source_raw_counts || {};
+  const errs = new Set(p.source_errors || []);
 
-  // Build two-column table sorted by count descending
-  const rows = Object.entries(bd)
-    .sort(([, a], [, b]) => b - a)
-    .map(([src, count]) => {
+  // Union of all source keys that appear in any dataset
+  const allSrcs = new Set([...Object.keys(bd), ...Object.keys(raw), ...errs]);
+  const totalRaw = Object.values(raw).reduce((a, b) => a + b, 0);
+
+  // Sort by raw count desc, then unique count desc
+  const rows = [...allSrcs]
+    .sort((a, b) => {
+      const diff = (raw[b] || 0) - (raw[a] || 0);
+      return diff !== 0 ? diff : (bd[b] || 0) - (bd[a] || 0);
+    })
+    .map(src => {
       const name = SOURCE_NAMES[src] || src;
-      return `<tr><td>${esc(name)}</td><td style="text-align:right;font-weight:700">${count}</td></tr>`;
+      const rawCount = raw[src] || 0;
+      const unique = bd[src] || 0;
+      const errBadge = errs.has(src)
+        ? `<span style="color:#e06c00;margin-left:0.35rem;font-size:0.8rem" title="Search failed or was blocked">⚠ blocked</span>`
+        : "";
+      const rawCell = errs.has(src) && rawCount === 0 ? "—" : rawCount;
+      return `<tr>
+        <td>${esc(name)}${errBadge}</td>
+        <td style="text-align:right">${rawCell}</td>
+        <td style="text-align:right;font-weight:600">${unique}</td>
+      </tr>`;
     }).join("");
 
   const runBtn = `<button class="alda-btn alda-btn-primary" onclick="runScoring()">Run relevance analysis</button>`;
@@ -1312,13 +1335,26 @@ function showScoringGate(job) {
   if (!gate) return;
   gate.classList.remove("hidden");
   gate.innerHTML =
-    `<p><strong>${total}</strong> source${total !== 1 ? "s" : ""} found. ` +
+    `<p><strong>${total}</strong> source${total !== 1 ? "s" : ""} found across databases. ` +
     `Would you like the language model to score each source for relevance to your research question?</p>` +
     (rows
-      ? `<table class="prisma-table" style="margin:0.75rem 0;max-width:28rem">
-           <thead><tr><th>Source</th><th style="text-align:right">Found</th></tr></thead>
+      ? `<table class="prisma-table" style="margin:0.75rem 0;max-width:36rem">
+           <thead><tr>
+             <th>Database</th>
+             <th style="text-align:right">Found</th>
+             <th style="text-align:right">Unique</th>
+           </tr></thead>
            <tbody>${rows}</tbody>
-         </table>`
+           <tfoot><tr>
+             <td><strong>Total</strong></td>
+             <td style="text-align:right">${totalRaw}</td>
+             <td style="text-align:right;font-weight:700">${total}</td>
+           </tr></tfoot>
+         </table>
+         <p style="font-size:0.78rem;color:var(--alda-text-muted);margin-top:0.25rem">
+           <em>Found</em> = results retrieved per database before deduplication.
+           <em>Unique</em> = new sources contributed after cross-database deduplication.
+         </p>`
       : "") +
     `<div class="alda-btn-row" style="margin-top:1rem">
        ${runBtn}
