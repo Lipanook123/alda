@@ -375,7 +375,6 @@ async function syncLmToBackend(cfg) {
 // ──────────────────────────────────────────────
 let _gateLmProvider = null;
 let _lmGateFromSettings = false;
-let _lmGateFromScoringGate = false;
 
 function initLmGate() {
   const grid = document.getElementById("gate-provider-grid");
@@ -395,7 +394,7 @@ function gateLmGoTo(step) {
   document.querySelectorAll(".alda-gate-step").forEach(s => s.classList.add("hidden"));
   document.getElementById(`gate-lm-${step}`)?.classList.remove("hidden");
   const cancelBtn = document.getElementById("btn-gate-lm-cancel");
-  if (cancelBtn) cancelBtn.classList.toggle("hidden", !_lmGateFromSettings && !_lmGateFromScoringGate);
+  if (cancelBtn) cancelBtn.classList.toggle("hidden", !_lmGateFromSettings);
 }
 
 function gateLmSelectProvider(key) {
@@ -470,11 +469,6 @@ async function gateLmTestAndSave() {
 
 function passLmGate() {
   hideGate("lm");
-  if (_lmGateFromScoringGate) {
-    _lmGateFromScoringGate = false;
-    _startScoringPhase();
-    return;
-  }
   const appIsHidden = document.getElementById("app")?.classList.contains("hidden");
   if (_lmGateFromSettings) {
     _lmGateFromSettings = false;
@@ -489,11 +483,6 @@ function passLmGate() {
 }
 
 function cancelLmGate() {
-  if (_lmGateFromScoringGate) {
-    _lmGateFromScoringGate = false;
-    hideGate("lm");
-    return;  // scoring gate is still visible underneath
-  }
   if (!_lmGateFromSettings) return;
   hideGate("lm");
   _lmGateFromSettings = false;
@@ -1367,13 +1356,6 @@ function showScoringGate(job) {
 }
 
 async function runScoring() {
-  if (!state.lmProvider || !state.lmModel) {
-    // LLM not configured — open the setup wizard; passLmGate will call _startScoringPhase
-    _lmGateFromScoringGate = true;
-    showGate("lm");
-    gateLmGoTo(1);
-    return;
-  }
   await _startScoringPhase();
 }
 

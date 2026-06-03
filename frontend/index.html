@@ -9,7 +9,7 @@
   <!-- Load web fonts asynchronously — text renders immediately with fallback fonts -->
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Alice&family=Raleway:wght@400;500;600;700;800&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alice&family=Raleway:wght@400;500;600;700;800&display=swap" /></noscript>
-  <link rel="stylesheet" href="css/style.css?v=8" />
+  <link rel="stylesheet" href="css/style.css?v=9" />
 </head>
 <body>
 
@@ -46,10 +46,11 @@
         <span class="alda-gate-step-pip"></span>
       </div>
       <h2>Language model required</h2>
-      <p>ALDA uses a language model to do two things:</p>
+      <p>ALDA requires a language model throughout the search process:</p>
       <ul>
-        <li><strong>Understand your research question</strong> — extracting keywords, date ranges, and criteria automatically</li>
-        <li><strong>Score each result for relevance</strong> — so the most useful sources appear first</li>
+        <li><strong>Parse your research question</strong> — extract keywords, date ranges, and Boolean queries</li>
+        <li><strong>Translate queries</strong> — search regional databases in their native language</li>
+        <li><strong>Score results for relevance</strong> — so the most useful sources appear first</li>
       </ul>
       <p>You need an API key from a language model provider. Setup takes about 2 minutes. Your key is stored locally in your browser.</p>
       <div class="alda-btn-row" style="margin-top:1.5rem">
@@ -639,6 +640,6 @@ https://example.org/paper1,My Paper Title,Smith J; Jones A,2022</code></pre>
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=8"></script>
+<script type="module" src="js/app.js?v=9"></script>
 </body>
 </html>
