@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["setup"])
 
 _install_jobs: dict[str, dict] = {}
+_chromium_installed: bool | None = None  # cached after first check
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -46,15 +47,19 @@ def _persist_config() -> None:
 
 
 async def _check_chromium() -> bool:
-    """Return True if the Playwright Chromium binary is already installed."""
+    """Return True if the Playwright Chromium binary is installed. Result is cached."""
+    global _chromium_installed
+    if _chromium_installed is not None:
+        return _chromium_installed
     try:
         from playwright.async_api import async_playwright  # noqa: PLC0415
         async with async_playwright() as pw:
             path = pw.chromium.executable_path
         from pathlib import Path  # noqa: PLC0415
-        return Path(path).exists()
+        _chromium_installed = Path(path).exists()
     except Exception:
-        return False
+        _chromium_installed = False
+    return _chromium_installed
 
 
 async def _run_chromium_install(job_id: str) -> None:
@@ -67,6 +72,8 @@ async def _run_chromium_install(job_id: str) -> None:
         stdout, _ = await proc.communicate()
         if proc.returncode == 0:
             _install_jobs[job_id] = {"status": "complete", "message": "Chromium installed."}
+            global _chromium_installed
+            _chromium_installed = True
         else:
             _install_jobs[job_id] = {"status": "failed", "message": (stdout or b"").decode()[:500]}
     except Exception as e:

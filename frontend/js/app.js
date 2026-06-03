@@ -523,12 +523,16 @@ async function init() {
 }
 
 function proceedAfterBackend() {
-  if (!state.lmConfig) {
+  if (!state.lmConfig && !state.lmProvider) {
+    // Neither local config nor backend config — need setup
     showGate("lm");
     gateLmGoTo(0);
     return;
   }
-  syncLmToBackend(state.lmConfig);
+  if (state.lmConfig && !state.lmProvider) {
+    // Backend doesn't have LLM (fresh restart, persistence unavailable) — re-apply
+    syncLmToBackend(state.lmConfig);
+  }
   showApp();
 }
 
@@ -543,7 +547,6 @@ function showApp() {
   initThemes();
   initScrapingToggle();
   restoreState();
-  checkHealth();
 }
 
 function restoreState() {

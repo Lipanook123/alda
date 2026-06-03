@@ -6,8 +6,10 @@
   <title>ALDA — Autonomous Literature Search</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Alice&family=Raleway:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css?v=5" />
+  <!-- Load web fonts asynchronously — text renders immediately with fallback fonts -->
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Alice&family=Raleway:wght@400;500;600;700;800&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alice&family=Raleway:wght@400;500;600;700;800&display=swap" /></noscript>
+  <link rel="stylesheet" href="css/style.css?v=6" />
 </head>
 <body>
 
@@ -637,6 +639,6 @@ https://example.org/paper1,My Paper Title,Smith J; Jones A,2022</code></pre>
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=5"></script>
+<script type="module" src="js/app.js?v=6"></script>
 </body>
 </html>
