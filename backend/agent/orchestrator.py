@@ -213,9 +213,8 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
         if effective_limit and total_inserted >= effective_limit:
             break
 
-    # Pause for user confirmation before LLM scoring; skip gate if no LLM configured
-    will_score = request.use_llm_relevance and _config.is_llm_configured()
-    job.status = "awaiting_scoring" if will_score else ("saturated" if job.progress.saturation_reached else "complete")
+    # Always pause for user to review source counts before any LLM scoring
+    job.status = "awaiting_scoring"
     job.updated_at = datetime.now(timezone.utc)
     async with database.get_conn() as conn:
         database.update_query_status(conn, query_id, job.status, results_count=total_inserted)

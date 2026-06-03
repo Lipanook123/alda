@@ -375,6 +375,7 @@ async function syncLmToBackend(cfg) {
 // ──────────────────────────────────────────────
 let _gateLmProvider = null;
 let _lmGateFromSettings = false;
+let _lmGateFromScoringGate = false;
 
 function initLmGate() {
   const grid = document.getElementById("gate-provider-grid");
@@ -394,7 +395,7 @@ function gateLmGoTo(step) {
   document.querySelectorAll(".alda-gate-step").forEach(s => s.classList.add("hidden"));
   document.getElementById(`gate-lm-${step}`)?.classList.remove("hidden");
   const cancelBtn = document.getElementById("btn-gate-lm-cancel");
-  if (cancelBtn) cancelBtn.classList.toggle("hidden", !_lmGateFromSettings);
+  if (cancelBtn) cancelBtn.classList.toggle("hidden", !_lmGateFromSettings && !_lmGateFromScoringGate);
 }
 
 function gateLmSelectProvider(key) {
@@ -469,6 +470,11 @@ async function gateLmTestAndSave() {
 
 function passLmGate() {
   hideGate("lm");
+  if (_lmGateFromScoringGate) {
+    _lmGateFromScoringGate = false;
+    _startScoringPhase();
+    return;
+  }
   const appIsHidden = document.getElementById("app")?.classList.contains("hidden");
   if (_lmGateFromSettings) {
     _lmGateFromSettings = false;
@@ -483,6 +489,11 @@ function passLmGate() {
 }
 
 function cancelLmGate() {
+  if (_lmGateFromScoringGate) {
+    _lmGateFromScoringGate = false;
+    hideGate("lm");
+    return;  // scoring gate is still visible underneath
+  }
   if (!_lmGateFromSettings) return;
   hideGate("lm");
   _lmGateFromSettings = false;
@@ -1248,10 +1259,7 @@ function showScoringGate(job) {
       return `<tr><td>${esc(name)}</td><td style="text-align:right;font-weight:700">${count}</td></tr>`;
     }).join("");
 
-  const llmAvail = !!(state.lmProvider && state.lmModel);
-  const runBtn = llmAvail
-    ? `<button class="alda-btn alda-btn-primary" onclick="runScoring()">Run relevance analysis</button>`
-    : `<button class="alda-btn alda-btn-primary" disabled title="No language model configured">Run relevance analysis</button>`;
+  const runBtn = `<button class="alda-btn alda-btn-primary" onclick="runScoring()">Run relevance analysis</button>`;
 
   const gate = document.getElementById("scoring-gate");
   if (!gate) return;
@@ -1276,12 +1284,23 @@ function showScoringGate(job) {
 }
 
 async function runScoring() {
-  const gate = document.getElementById("scoring-gate");
-  if (gate) gate.innerHTML = "<em>Starting relevance analysis…</em>";
+  if (!state.lmProvider || !state.lmModel) {
+    // LLM not configured — open the setup wizard; passLmGate will call _startScoringPhase
+    _lmGateFromScoringGate = true;
+    showGate("lm");
+    gateLmGoTo(1);
+    return;
+  }
+  await _startScoringPhase();
+}
+
+async function _startScoringPhase() {
+  // Disable buttons to prevent double-click during API call
+  document.getElementById("scoring-gate")?.querySelectorAll("button")
+    .forEach(b => { b.disabled = true; });
   try {
     await api("POST", `/api/v1/search/score/${state.jobId}`);
     appLog("info", "Relevance scoring started", state.jobId);
-    // Resume polling — scoring phase will end as complete/saturated
     if (state.pollInterval) clearInterval(state.pollInterval);
     state.pollErrorCount = 0;
     state.pollInFlight = false;
@@ -1290,6 +1309,8 @@ async function runScoring() {
     state.pollInterval = setInterval(pollStatus, 2000);
   } catch (e) {
     appLog("error", "Failed to start scoring", e.message);
+    document.getElementById("scoring-gate")?.querySelectorAll("button")
+      .forEach(b => { b.disabled = false; });
     showStatus("search-status-msg", `Could not start relevance analysis: ${e.message}`, "error");
   }
 }
