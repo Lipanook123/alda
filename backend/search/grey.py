@@ -199,6 +199,13 @@ def _search_duckduckgo_sync(query: str) -> list[SourceIn]:
             soup = BeautifulSoup(resp.text, "lxml")
             results = soup.select(_DDG_RESULT_SEL)
             if not results:
+                if page == 1:
+                    # No results on first page means DuckDuckGo is blocking or
+                    # serving a CAPTCHA — raise so it shows as ⚠ blocked rather
+                    # than a silent zero.
+                    raise RuntimeError(
+                        "DuckDuckGo returned no results on first page — likely blocked or CAPTCHA"
+                    )
                 break
 
             for r in results:

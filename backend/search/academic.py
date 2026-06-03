@@ -18,6 +18,45 @@ from backend.search.translator import TARGET_LANGUAGES, build_translated_query
 log = logging.getLogger(__name__)
 
 _UA = "ALDA/0.1 (https://github.com/lipanook123/alda; mailto:lipanook@gmail.com)"
+
+
+async def _http_get(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    max_retries: int = 3,
+    **kwargs: Any,
+) -> httpx.Response:
+    """GET with automatic retry on 429/503 using Retry-After or exponential backoff."""
+    last_exc: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            resp = await client.get(url, **kwargs)
+        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            last_exc = exc
+            wait = 2 ** attempt
+            log.debug("Connection error for %s (attempt %d): %s — retrying in %ds", url, attempt + 1, exc, wait)
+            await asyncio.sleep(wait)
+            continue
+        if resp.status_code in (429, 503):
+            try:
+                wait = int(resp.headers.get("Retry-After", 2 ** attempt))
+            except (ValueError, TypeError):
+                wait = 2 ** attempt
+            wait = min(wait, 60)
+            log.debug("Rate limited by %s (attempt %d) — retrying in %ds", url, attempt + 1, wait)
+            await asyncio.sleep(wait)
+            last_exc = None
+            continue
+        resp.raise_for_status()
+        return resp
+    if last_exc:
+        raise last_exc
+    raise httpx.HTTPStatusError(
+        f"Still rate-limited after {max_retries} retries",
+        request=httpx.Request("GET", url),
+        response=resp,  # type: ignore[reportPossiblyUnbound]
+    )
 _TIMEOUT = httpx.Timeout(30.0)
 
 
@@ -225,12 +264,12 @@ async def _search_semantic_scholar(
     if brief.date_range:
         params["year"] = f"{brief.date_range[0]}-{brief.date_range[1]}"
 
-    resp = await client.get(
+    resp = await _http_get(
+        client,
         "https://api.semanticscholar.org/graph/v1/paper/search",
         params=params,
         headers=headers,
     )
-    resp.raise_for_status()
     data = resp.json()
 
     sources: list[SourceIn] = []
@@ -381,7 +420,7 @@ def _search_arxiv_sync(query: str, brief: StructuredBrief) -> list[SourceIn]:
     except ImportError:
         return []
 
-    client = arxiv.Client()
+    client = arxiv.Client(delay_seconds=3.0, num_retries=2)
     search = arxiv.Search(
         query=query,
         max_results=min(settings.max_results_per_source, 100),
@@ -512,12 +551,12 @@ async def _search_core(
     if core_key:
         headers["Authorization"] = f"Bearer {core_key}"
 
-    resp = await client.get(
+    resp = await _http_get(
+        client,
         "https://api.core.ac.uk/v3/search/works",
         params={"q": query, "limit": min(settings.max_results_per_source, 100), "offset": 0},
         headers=headers,
     )
-    resp.raise_for_status()
     data = resp.json()
 
     sources: list[SourceIn] = []
@@ -662,11 +701,12 @@ async def _search_base(
         lo, hi = brief.date_range
         params["filter[dcdate]"] = f"[{lo} TO {hi}]"
 
-    resp = await client.get(
+    resp = await _http_get(
+        client,
         "https://api.base-search.net/cgi-bin/BaseHttpSearchInterface.fcgi",
         params=params,
+        headers={"User-Agent": _UA},
     )
-    resp.raise_for_status()
     data = resp.json()
 
     def _listify(val: Any) -> list:
@@ -721,25 +761,26 @@ async def _search_openaire(
     client: httpx.AsyncClient, query: str, brief: StructuredBrief
 ) -> list[SourceIn]:
     params: dict[str, Any] = {
-        "search": query,
-        "format": "json",
+        "keywords": query,
         "size": min(settings.max_results_per_source, 100),
         "page": 1,
-        "sortBy": "relevance",
     }
     if brief.date_range:
         lo, hi = brief.date_range
         params["fromDateAccepted"] = f"{lo}-01-01"
         params["toDateAccepted"] = f"{hi}-12-31"
 
-    resp = await client.get("https://api.openaire.eu/graph/publications", params=params)
-    resp.raise_for_status()
+    resp = await _http_get(
+        client,
+        "https://api.openaire.eu/graph/research-products",
+        params={**params, "type": "publication"},
+    )
     data = resp.json()
 
     sources: list[SourceIn] = []
     for item in data.get("results", []):
         titles = item.get("titles") or []
-        title = titles[0].get("value") if titles else "Untitled"
+        title = (titles[0].get("value") if isinstance(titles[0], dict) else titles[0]) if titles else "Untitled"
 
         authors = [a.get("fullName", "") for a in (item.get("authors") or [])]
 
@@ -750,12 +791,17 @@ async def _search_openaire(
         identifiers = item.get("identifiers") or []
         doi = next((i.get("value") for i in identifiers if i.get("scheme") == "doi"), None)
 
-        instances = item.get("instances") or []
-        url = next((inst.get("url") for inst in instances if inst.get("url")), None)
-        url = url or (f"https://doi.org/{doi}" if doi else "")
+        best_url = None
+        for inst in (item.get("instances") or []):
+            u = inst.get("url")
+            if u:
+                best_url = u
+                if inst.get("accessRightCode") in ("OPEN", "OPEN SOURCE"):
+                    break
+        url = best_url or (f"https://doi.org/{doi}" if doi else "")
 
         descriptions = item.get("descriptions") or []
-        abstract = descriptions[0].get("value") if descriptions else None
+        abstract = descriptions[0].get("value") if descriptions and isinstance(descriptions[0], dict) else (descriptions[0] if descriptions else None)
 
         journals = item.get("journals") or []
         venue = journals[0].get("name") if journals else None
