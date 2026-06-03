@@ -125,6 +125,7 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
     total_inserted = 0
     total_duplicates = 0
     max_iterations = 5
+    _linked_source_ids: set[str] = set()  # track IDs already linked to this query
 
     for iteration in range(1, max_iterations + 1):
         job.progress.current_iteration = iteration
@@ -181,17 +182,22 @@ async def _pipeline(job: SearchJobStatus, request: SearchJobRequest) -> None:
 
         # Insert into DB
         inserted_this_iter = 0
+        # Only link existing-DB sources that haven't already been linked to this query
+        new_existing_db_ids = [sid for sid in existing_db_ids if sid not in _linked_source_ids]
         async with database.get_conn() as conn:
             for src in unique_candidates:
                 src_dict = src.model_dump()
                 database.insert_source(conn, src_dict)
-                database.insert_query_log(conn, query_id, src_dict["id"], matched=True, score=src.relevance)
+                src_id = src_dict["id"]
+                database.insert_query_log(conn, query_id, src_id, matched=True, score=src.relevance)
+                _linked_source_ids.add(src_id)
                 inserted_this_iter += 1
             # Link DB-duplicate sources to this query so they appear in results
-            for src_id in existing_db_ids:
+            for src_id in new_existing_db_ids:
                 database.insert_query_log(conn, query_id, src_id, matched=True)
+                _linked_source_ids.add(src_id)
 
-        linked_this_iter = inserted_this_iter + len(existing_db_ids)
+        linked_this_iter = inserted_this_iter + len(new_existing_db_ids)
         total_inserted += linked_this_iter
         iteration_new_counts.append(linked_this_iter)
 
