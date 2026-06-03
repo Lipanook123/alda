@@ -96,7 +96,9 @@ class SearchProgress(BaseModel):
     new_this_iteration: int = 0
     duplicates_removed: int = 0
     saturation_reached: bool = False
-    source_breakdown: dict[str, int] = {}
+    source_breakdown: dict[str, int] = {}   # unique contributions per source (post-dedup)
+    source_raw_counts: dict[str, int] = {}  # total found per source (pre-dedup)
+    source_errors: list[str] = []           # sources that returned an error
     tokens_used: int = 0
     error: str | None = None
 

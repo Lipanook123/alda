@@ -947,6 +947,14 @@ details[open] > summary::before { transform: rotate(90deg); }
   border-color: var(--alda-success);
   background: var(--alda-success-bg);
 }
+.src-tile.src-tile-error {
+  border-color: #e06c00;
+  background: rgba(224, 108, 0, 0.08);
+}
+.src-tile.src-tile-error .src-tile-waiting {
+  color: #e06c00;
+  animation: none;
+}
 .src-tile-count {
   font-weight: 700;
   color: var(--alda-success);
